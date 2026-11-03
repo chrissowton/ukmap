@@ -1,0 +1,18 @@
+{
+  "name": "which-countries",
+  "private": true,
+  "description": "Tools for rebuilding the data. The website itself needs no build step.",
+  "type": "module",
+  "scripts": {
+    "borders": "node make_borders.mjs",
+    "datatable": "node make_data_table.cjs",
+    "features": "node make_features.mjs"
+  },
+  "devDependencies": {
+    "d3-geo": "^3.1.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2",
+    "topojson-server": "^3.0.1",
+    "topojson-simplify": "^3.0.3"
+  }
+}

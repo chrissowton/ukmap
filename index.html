@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Which Places?</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d5f70">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="description" content="Free, open maps and data for every local authority in the UK: stack filters to find places, compare them, rank them and watch change over time.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css?v=1">
+<link rel="preload" href="areas.json?v=1" as="fetch" crossorigin="anonymous">
+<link rel="preload" href="areas.topo.json?v=1" as="fetch" crossorigin="anonymous">
+<link rel="preload" href="timeseries.json?v=1" as="fetch" crossorigin="anonymous">
+<!-- start downloading the main data straight away, while the scripts load -->
+<link rel="canonical" href="https://chrissowton.github.io/ukmap/">
+<meta property="og:title" content="Which Places? Open maps and data for every UK local authority">
+<meta property="og:description" content="Free maps, charts and data for the 361 local authorities of England, Wales, Scotland and Northern Ireland.">
+<meta property="og:image" content="https://chrissowton.github.io/ukmap/icon-512.png">
+</head>
+<body>
+<!--APP-->
+<header class="top">
+  <div class="brand">
+    <h1>Which Places<span>?</span></h1>
+  </div>
+  <div class="add">
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    <input id="addInput" type="search" autocomplete="off" placeholder="Search for a place or a measure" aria-label="Search for a place or a measure" aria-controls="addMenu" aria-expanded="false">
+    <div id="addMenu" class="menu" role="listbox" hidden></div>
+  </div>
+  <div id="modes" hidden title="Switch between human and physical geography. Your filters stay, so you can mix both." class="modes" role="radiogroup" aria-label="Kind of geography">
+    <button type="button" role="radio" data-m="human" aria-checked="true">Human</button>
+    <button type="button" role="radio" data-m="physical" aria-checked="false">Physical</button>
+  </div>
+  <div id="dockTop" class="docktop"></div>
+</header>
+<div id="fcard" class="fcard" role="tooltip" hidden></div>
+<div id="factfile" class="ff-overlay" role="dialog" aria-label="Area factfile" hidden></div>
+
+<div class="shell">
+<nav id="cpanel" class="cpanel" aria-label="Control panel">
+  <div class="cp-scroll">
+    <section class="cp-sec" data-s="filters" aria-labelledby="cpF">
+      <h2 id="cpF" class="cp-h"><span class="cp-n">1</span>Filters<span id="cpCount" class="cp-count" hidden></span></h2>
+      <div id="chips" class="chips"></div>
+      <div id="editor" class="card editor" hidden></div>
+      <p class="cp-sub">Add a filter by theme</p>
+      <nav id="themes" class="themes" aria-label="Browse filters by theme"></nav>
+    </section>
+    <section class="cp-sec" data-s="view" aria-labelledby="cpV">
+      <h2 id="cpV" class="cp-h"><span class="cp-n">2</span>Show the results as</h2>
+    <div id="views" class="views" role="tablist" aria-label="How to show the results">
+      <button type="button" role="tab" data-v="map" aria-selected="true"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6.3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M1.8 8h12.4M8 1.7c-2.2 2.4-2.2 10.2 0 12.6M8 1.7c2.2 2.4 2.2 10.2 0 12.6" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>Map</button>
+      <button type="button" role="tab" data-v="compare" aria-selected="false"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 1.5v12.5h12.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="9.5" r="1.8" fill="currentColor"/><circle cx="10.5" cy="5.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12.5" cy="10.5" r="1.2" fill="currentColor"/></svg>Compare</button>
+      <button type="button" role="tab" data-v="rank" aria-selected="false"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M2 3h12M2 6.5h9M2 10h6M2 13.5h3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Rankings</button>
+      <button type="button" role="tab" data-v="trends" aria-selected="false"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M1.5 12.5l4-4.5 3 2.5 5.5-7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><path d="M1.5 14.5h13" stroke="currentColor" stroke-width="1.2"/></svg>Charts</button>
+      <button type="button" role="tab" data-v="insights" aria-selected="false"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.4 10.4L14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5 8l1.5-1.6L8 7.6 9.4 5.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Insights</button>
+    </div>
+    </section>
+    <section class="cp-sec" data-s="learn" aria-labelledby="cpL">
+      <h2 id="cpL" class="cp-h"><span class="cp-n">3</span>Learn &amp; share</h2>
+      <div id="cpLearn" class="cp-tools">
+        <button id="ffBtn" hidden class="cp-tool" type="button" title="Print or download a country factfile"><span class="cp-ic" aria-hidden="true">📄</span>Factfile</button>
+        <button type="button" id="sbsBtn" class="cp-tool" title="Compare two or three areas side by side"><span class="cp-ic" aria-hidden="true">⇄</span>Side by side</button>
+        <button type="button" id="shareBtn" class="cp-tool" title="Share this view, or set a task for students"><span class="cp-ic" aria-hidden="true">🔗</span>Share</button>
+      </div>
+    </section>
+  </div>
+  <div id="cpFoot" class="cp-foot"></div>
+</nav>
+<div id="tpanel" class="tpanel" role="dialog" aria-label="Filters" hidden></div>
+
+<div class="content">
+<div id="task" class="task" hidden></div>
+<section class="bar" aria-label="What the map shows">
+  <p id="sentence" class="sentence" aria-live="polite"></p>
+</section>
+
+<main class="main">
+  <div id="mapwrap" class="mapwrap">
+    <div id="mapstage" class="mapstage">
+      <div id="starter" class="card starter"></div>
+      <svg id="map" role="img" aria-label="Map of the UK highlighting matching areas"></svg>
+      <div id="zero" class="card zero" hidden></div>
+      <div id="flowbar" class="card flowbar" hidden></div>
+      <button id="mmBtn" class="mmbtn" type="button" aria-expanded="false" aria-controls="mmCard">🎨 Map style</button>
+      <div id="mmCard" class="card mmcard" hidden></div>
+      <div class="zoom">
+        <button id="zin" type="button" aria-label="Zoom in">+</button>
+        <button id="zout" type="button" aria-label="Zoom out">−</button>
+        <button id="zreset" type="button" aria-label="Reset view">⟲</button>
+        <button id="zlabels" type="button" aria-pressed="true" aria-label="Show place names, rivers and mountains" title="Place names, rivers and mountains">Aa</button>
+      </div>
+      <div id="tooltip" class="tooltip" hidden></div>
+    </div>
+    <div id="mapfoot" class="mapfoot">
+      <div id="legend" class="legend"></div>
+      <div id="timebar" class="timebar"></div>
+    </div>
+  </div>
+
+  <div id="viewwrap" class="viewwrap" hidden></div>
+
+  <aside id="results" class="results" aria-label="Results"></aside>
+</main>
+</div>
+</div>
+
+<nav id="tabbar" class="tabbar" aria-label="Controls">
+  <button type="button" data-t="filters"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 4h14l-5.5 6.5V16l-3 1.5v-7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>Filters</span><b class="tb-badge" hidden></b></button>
+  <button type="button" data-t="view"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="11" y="3" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="3" y="11" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="11" y="11" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>View</span></button>
+  <button type="button" data-t="list"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M7 5h10M7 10h10M7 15h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="3.5" cy="5" r="1.2" fill="currentColor"/><circle cx="3.5" cy="10" r="1.2" fill="currentColor"/><circle cx="3.5" cy="15" r="1.2" fill="currentColor"/></svg><span>List</span></button>
+  <button type="button" data-t="quiz" hidden><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="10" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="10" r="1" fill="currentColor"/></svg><span>Quiz</span></button>
+  <button type="button" data-t="more"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.6" fill="currentColor"/><circle cx="10" cy="10" r="1.6" fill="currentColor"/><circle cx="15.5" cy="10" r="1.6" fill="currentColor"/></svg><span>More</span></button>
+</nav>
+<div id="sheetShade" class="sheetshade" hidden></div>
+
+<div id="about" class="overlay" hidden></div>
+<div id="sbs" class="ff-overlay sbs-overlay" role="dialog" aria-label="Areas side by side" hidden></div>
+<div id="share" class="overlay" hidden></div>
+<!--/APP-->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script src="filters.js?v=1"></script>
+<script src="glossary.js?v=1"></script>
+<script src="links.js?v=1"></script>
+<script src="player.js?v=1"></script>
+<script src="picker.js?v=1"></script>
+<script src="views.js?v=1"></script>
+<script src="charts.js?v=1"></script>
+<script src="insights.js?v=1"></script>
+<script src="app.js?v=1"></script>
+<script src="stats.js?v=1"></script>
+<script src="access.js?v=1"></script>
+<script src="layout.js?v=1"></script>
+<script src="about.js?v=1"></script>
+</body>
+</html>
