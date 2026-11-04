@@ -2430,28 +2430,6 @@ body.embed #viewwrap { padding-left: 0 !important; padding-right: 0 !important; 
   #mapcards > .rgcard, .rgcard { width: 100% !important; max-width: 100% !important; box-sizing: border-box; }
 }
 
-/* ---------- Which Places? layout (release 1.0.1) ----------
-   The UK is tall and narrow, so on a laptop or bigger the map takes the whole left side at full height,
-   and the filters, views and results are stacked in one column on the right. Phones keep their own layout. */
-@media (min-width: 761px) {
-  :root { --side-w: 400px; }
-  /* the controls get a little more of the height than the results */
-  .shell { grid-template-columns: minmax(0, 1fr) var(--side-w); grid-template-rows: auto auto minmax(0, 1.4fr) minmax(0, 1fr); }
-  .content, .content > .main { display: contents; }
-  .shell #task { grid-column: 1; grid-row: 1; }
-  .shell .bar { grid-column: 1; grid-row: 2; }
-  .shell .main > .mapwrap, .shell .main > .viewwrap { grid-column: 1; grid-row: 3 / 5; }
-  .shell .cpanel { grid-column: 2; grid-row: 1 / 4; border-right: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  .shell .main > .results { grid-column: 2; grid-row: 4; border-left: 1px solid var(--line); }
-  .sidetoggle { display: none !important; }
-  /* the five views as a row of buttons, to leave room for the results below */
-  .cpanel .views { flex-direction: row; flex-wrap: wrap; gap: 3px; }
-  .cpanel .views button { width: auto; flex: 1 1 30%; justify-content: center; gap: 6px; padding: 7px 6px; font-size: 13px; }
-  .cp-sec { padding: 10px 14px 12px; }
-  .cp-h { margin-bottom: 8px; }
-}
-@media (max-width: 1100px) and (min-width: 761px) { :root { --side-w: 340px; } }
-
 /* Go to a nation or region, at the right of the sentence bar */
 .bar { gap: 10px; }
 .bar .goto { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
@@ -2464,3 +2442,160 @@ body.embed #viewwrap { padding-left: 0 !important; padding-right: 0 !important; 
 
 /* phones: a shorter note under the year, so it doesn't wrap word by word */
 @media (max-width: 760px) { .timebar .tnote { display: none; } #map g.inset text { display: none; } }
+
+
+/* =====================================================================
+   Which Places? layout for laptops and bigger (release 1.0.2) — see shell.js.
+   body.desk is set only at 761px wide or more; phones are untouched.
+   ===================================================================== */
+.wpanel { display: none; }
+body.desk { --mapw: clamp(380px, calc((100dvh - 56px) * 0.64), 52vw); }
+body.desk .cpanel, body.desk .bar, body.desk .sidetoggle, body.desk #results .rfoot, body.desk #mapdock .mapbtns:empty { display: none !important; }
+
+/* top bar */
+body.desk .top { padding-block: 8px; gap: 14px; }
+body.desk .top .add { flex: 0 1 380px; margin: 0; }
+body.desk .toptabs { margin-left: auto; }
+body.desk .toptabs #views { display: flex; flex-direction: row; width: auto; gap: 2px; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+body.desk .toptabs #views button { width: auto; flex: none; gap: 6px; padding: 5px 11px; border: 0; border-radius: 7px; background: none; color: var(--muted); font-size: 13.5px; font-weight: 500; justify-content: center; }
+body.desk .toptabs #views button[aria-selected="true"] { background: var(--accent); color: #fff; }
+body.desk .toptabs #views button:hover:not([aria-selected="true"]) { background: var(--surface); color: var(--ink); }
+.toptools { display: flex; gap: 6px; flex: none; }
+.toptools .tt { position: relative; }
+.toptools .cp-tool { width: auto; white-space: nowrap; border: 1px solid var(--line); background: var(--surface); padding: 6px 10px; font-size: 13px; gap: 6px; }
+.toptools .cp-tool .cp-ic { width: auto; }
+.toptools .dlmenu, .toptools .moremenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 90; width: 320px; margin: 0; box-shadow: 0 10px 30px rgba(0, 0, 0, .16); }
+.moremenu { padding: 6px; display: flex; flex-direction: column; }
+.moremenu[hidden] { display: none; }
+.moremenu #moreTools { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); margin-bottom: 4px; padding-bottom: 4px; }
+.moremenu #moreTools .cp-tool { border: 0; width: 100%; }
+.moremenu .mlink { display: block; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 8px; font-size: 13.5px; color: var(--ink); text-decoration: none; }
+.moremenu .mlink:hover, .moremenu #moreTools .cp-tool:hover { background: var(--bg); }
+@media (max-width: 1499px) {
+  body.desk .toptools #ttStx .cp-tool, body.desk .toptools #ttDl .cp-tool, body.desk .toptools #ttShare .cp-tool { font-size: 0; padding: 6px 9px; gap: 0; }
+  body.desk .toptools .cp-tool .cp-ic { font-size: 15px; }
+  body.desk .top .add { flex-basis: 300px; }
+}
+@media (max-width: 1180px) { body.desk .toptabs #views button svg { display: none; } body.desk .toptabs #views button { padding: 5px 9px; } }
+
+/* two columns: the map as wide as the UK needs, the panel the rest */
+body.desk .shell { display: grid; grid-template-columns: var(--mapw) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+body.desk .content { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+body.desk .content > .main { display: block; position: relative; flex: 1; min-height: 0; }
+body.desk .content .mapwrap { position: absolute; inset: 0; }
+body.desk .mapwrap[hidden] { display: flex !important; }
+body.desk .wpanel { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--surface); border-left: 1px solid var(--line); }
+body.desk .shell > .tpanel { z-index: 70; }
+
+/* the map: key and year in one card at the bottom; zoom and Map style top right */
+body.desk .mapfoot { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 6; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 4px 16px rgba(0, 0, 0, .08); }
+body.desk .mapfoot .legend { max-width: none; }
+body.desk .mapfoot .timebar.off { display: none; }
+body.desk .mapfoot:has(.legend[hidden]):has(.timebar.off) { display: none; }
+body.desk .mapfoot .timebar { flex: none; }
+body.desk .mapfoot .timebar .tnote { font-size: 11.5px; }
+body.desk .zoom { top: 12px; right: 12px; bottom: auto; }
+body.desk .zoom #mmBtn { position: static !important; display: grid !important; place-items: center; width: 32px; min-width: 32px; max-width: none; flex: none; height: 32px; padding: 0; font-size: 0; border-radius: 8px; box-shadow: none; overflow: hidden; }
+body.desk .zoom #mmBtn::before { content: "🎨"; font-size: 15px; }
+body.desk #mmCard { position: absolute; right: 56px; top: 12px; left: auto; bottom: auto; width: min(340px, calc(100% - 80px)); z-index: 20; }
+body.desk #map g.inset text { font-size: 9.5px; }
+
+/* panel head: where you are, the filters, and what is shown */
+.phead { position: relative; padding: 10px 22px 12px; border-bottom: 1px solid var(--line); flex: none; }
+.crumbs { display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px; }
+.crumbsel { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.crumbsel .uk { font-weight: 600; color: var(--ink); }
+.crumbsel[hidden] { display: none; }
+.crumbs .goto { margin: 0; }
+.crumbs .goto span { display: none; }
+.crumbtrail { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.crumbtrail[hidden] { display: none; }
+.crumbtrail .trail { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.crumbtrail .trail button { border: 0; background: none; padding: 2px 2px; color: var(--accent); font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; }
+.crumbtrail .trail .sep { color: var(--muted); }
+.crumbtrail .pn { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.crumbtrail .pn button { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 3px 9px; font-size: 12.5px; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumbtrail .pn button:hover { border-color: var(--accent); }
+.crumbtrail .pn .pos { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.frow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.frow .flab { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-right: 4px; }
+body.desk .frow #chips { display: contents; }
+body.desk .frow .chip { width: auto; max-width: 100%; }
+body.desk .frow .chip > button.lab { white-space: nowrap; }
+.addf { border: 1px dashed var(--accent); color: var(--accent); background: none; border-radius: 999px; padding: 5px 13px; font-weight: 600; font-size: 13.5px; }
+.addf:hover { background: var(--accent-soft); }
+.clearf { border: 0; background: none; color: var(--muted); text-decoration: underline; font-size: 12.5px; padding: 4px; }
+.clearf[hidden] { display: none; }
+body.desk #sentence { margin: 8px 0 0; font-size: 14px; line-height: 1.45; }
+body.desk #sentence #clearAll { display: none; }
+/* the filter editor opens over the panel and never pushes anything about */
+body.desk .phead #editor { position: absolute; left: 22px; top: calc(100% - 6px); z-index: 60; width: min(640px, calc(100% - 44px)); max-height: min(70vh, 640px); overflow: auto; box-shadow: 0 14px 40px rgba(0, 0, 0, .2); }
+
+/* panel body: the starting card, then the results, an area, or a chart */
+.pbody { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+body.desk .pbody > .starter { position: relative; width: auto; max-width: none; margin: 14px 22px 0; box-shadow: none; border: 1px solid var(--line); background: var(--bg); padding: 12px 14px; flex: none; transform: none; }
+body.desk .pbody > .starter h2 { font-size: 16px; }
+body.desk .pbody > .starter p { margin-bottom: 8px; }
+body.desk .pbody > #results { flex: 1; min-height: 0; border: 0; background: var(--surface); width: auto; }
+body.desk .pbody > #viewwrap { flex: 1; min-height: 0; }
+body.desk:not([data-view="map"]) .pbody > #results, body.desk:not([data-view="map"]) .pbody > .starter { display: none; }
+body.desk #results > .detail { overflow: auto; padding: 14px 22px 28px; }
+body.desk #results > .detail .back { display: none; }
+body.desk #results > .detail h2 { font-size: 30px; margin: 0; }
+
+/* results table */
+.rtab { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.rtop { display: flex; align-items: baseline; gap: 8px; padding: 12px 22px 6px; flex: none; }
+.rtop .n { font-family: var(--display); font-size: 28px; font-weight: 700; }
+.rtop .of { color: var(--muted); }
+.rtop .shadeby { margin-left: auto; font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.rtab .note { margin: 0 22px 6px; font-size: 12.5px; color: var(--muted); }
+.tablewrap2 { flex: 1; min-height: 0; overflow: auto; padding: 0 22px 24px; }
+.rtable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.rtable th, .rtable td.num { font-family: var(--body); }
+.rtable th { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom: 1px solid var(--line); padding: 0; text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); }
+.rtable th button { border: 0; background: none; padding: 8px 8px; font: inherit; color: inherit; width: 100%; text-align: inherit; }
+.rtable th button:hover { color: var(--ink); }
+.rtable th.on button { color: var(--ink); }
+.rtable th.num, .rtable td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rtable th.rk { width: 34px; padding: 8px; }
+.rtable td { padding: 6px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.rtable td.rk { color: var(--muted); font-size: 12px; }
+.rtable td.nm .an { font-weight: 500; }
+.rtable td.nm .ar { color: var(--muted); font-size: 12px; margin-left: 8px; }
+.rtable tr.trow { cursor: pointer; }
+.rtable tr.trow:hover td, .rtable tr.trow:focus-visible td { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.rtable tr.trow.sel td { background: var(--accent-soft); }
+.rtable .tbar { display: inline-block; height: 8px; border-radius: 4px; background: var(--match); vertical-align: middle; margin-right: 8px; }
+.rtable .nodata { color: var(--muted); font-size: 12px; }
+.rtab .empty { padding: 18px 0; color: var(--muted); }
+.nearmiss { margin-top: 16px; }
+.nearmiss h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.nchips, .achips { display: flex; flex-wrap: wrap; gap: 6px; }
+.nchip, .achip { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 4px 11px; font-size: 13px; color: var(--ink); }
+.nchip:hover, .achip:hover { border-color: var(--accent); background: var(--accent-soft); }
+.achip.go { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); color: var(--accent); font-weight: 500; }
+.nchips .more { color: var(--muted); font-size: 12.5px; align-self: center; }
+
+/* one area: summary cards and ways to move on */
+.asum { margin: 12px 0 18px; }
+.scards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.scard { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.scard .sk { font-size: 12px; color: var(--muted); }
+.scard .sk span { opacity: .8; }
+.scard .sv { font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -.01em; margin: 2px 0; }
+.scard .sc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.scard .sc b { color: var(--ink); font-weight: 600; }
+.scard .sp { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.snote { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.anav { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
+.abox { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.abox h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.pfh { margin: 18px 0 8px; }
+
+/* the chosen area and its neighbours on the map */
+#map path.sel { stroke: var(--ink); stroke-width: 2.6px; vector-effect: non-scaling-stroke; }
+#map path.nbr { stroke: var(--accent); stroke-width: 1.4px; vector-effect: non-scaling-stroke; }
+
+/* the zoom-to menu in the breadcrumb, as a quiet pill */
+.crumbs .goto select { border-radius: 999px; padding: 3px 10px; background: var(--bg); font-size: 12.5px; }

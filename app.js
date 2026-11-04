@@ -4,7 +4,7 @@
 
   // ---------- Load data ----------
   // ?v= makes browsers fetch fresh data after the site is updated (raise it in index.html too)
-  const DATA_VERSION = "2";
+  const DATA_VERSION = "3";
   // the single-file version carries its data compressed, and unpacks it first
   if (window.__READY__) await window.__READY__;
   const loadJSON = (url) => fetch(url + "?v=" + DATA_VERSION).then((r) => { if (!r.ok) throw new Error(url); return r.json(); });
@@ -592,6 +592,11 @@
   const shiftCoords = (c, dx, dy) => (typeof c[0] === "number" ? [c[0] + dx, c[1] + dy] : c.map((x) => shiftCoords(x, dx, dy)));
   geo.forEach((d) => { const ins = insetFor(d.id); if (ins) d.geometry = { ...d.geometry, coordinates: shiftCoords(d.geometry.coordinates, ins.dx, ins.dy) }; });
   rows.forEach((r) => { const ins = insetFor(r.iso3); if (ins && r.latlng) r.latlng = [r.latlng[0] + ins.dy, r.latlng[1] + ins.dx]; });
+  // neighbouring areas: those that share a border on the map
+  const NB = new Map();
+  topojson.neighbors(topo.objects.areas.geometries).forEach((list, i) => NB.set(geo[i].id, list.map((j) => geo[j].id)));
+  const desk = () => document.body.classList.contains("desk");
+  let lastListOrder = [];
   const insetShift = (lon, lat, code) => { const ins = code ? insetFor(code) : INSETS.find((x) => x.contains && x.contains(lon, lat)); return ins ? [lon + ins.dx, lat + ins.dy] : [lon, lat]; };
   // a Transverse Mercator centred on 2°W, like the Ordnance Survey's National Grid
   const projection = d3.geoTransverseMercator().rotate([2, -49]);
@@ -608,7 +613,9 @@
     svg.attr("viewBox", `0 0 ${w} ${h}`);
     citySize = Math.max(0.45, Math.min(1, w / 1100));
     // a little room round the world, and space at the top for the quiz card when it sits there
-    const padX = Math.max(16, w * 0.025), top = Math.max(16, mapTopPad), bottom = 16, left = Math.max(padX, mapLeftPad);
+    const foot = desk() ? $("#mapfoot") : null;
+    const footPad = foot && foot.offsetParent && !foot.classList.contains("empty") ? foot.offsetHeight + 22 : 0;
+    const padX = Math.max(16, w * 0.025), top = Math.max(16, mapTopPad), bottom = Math.max(16, footPad), left = Math.max(padX, mapLeftPad);
     const fc = { type: "FeatureCollection", features: geo };
     projection.fitExtent([[left, top], [w - padX, Math.max(top + 120, h - bottom)]], fc);
     if (mapBottomPad > 0) {
@@ -643,6 +650,9 @@
     drawCities();
     window.WX?.layout(); window.WCL?.draw(); window.WCG?.draw(); window.WRG?.layout();
   }
+  // the key card floats on the map on the desktop layout: when it changes size, refit the UK above it
+  let footH = 0;
+  new ResizeObserver(() => { const h = $("#mapfoot")?.offsetHeight || 0; if (desk() && Math.abs(h - footH) > 4) { footH = h; layout(); } }).observe($("#mapfoot"));
   const zoom = d3.zoom().scaleExtent([1, 40]).on("zoom", (e) => {
     k = e.transform.k;
     gLabels.selectAll("text").attr("font-size", (d) => d.fs / k).attr("stroke-width", 3 / k).attr("x", (d) => (d.side ? 8 / k : d.isCity ? 5 / k : 0));
@@ -665,7 +675,7 @@
     const nations = window.NATIONS || [], regions = (window.REGIONS || []).filter((r) => !nations.includes(r));
     const lab = document.createElement("label");
     lab.className = "goto"; lab.title = "Zoom the map to a nation or region";
-    lab.innerHTML = `<span>Go to</span><select id="goTo"><option value="">The whole UK</option><optgroup label="Nations">${nations.map((n) => `<option value="n:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup><optgroup label="Regions of England">${regions.map((n) => `<option value="r:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup></select>`;
+    lab.innerHTML = `<span>Go to</span><select id="goTo"><option value="">Zoom to a nation or region…</option><optgroup label="Nations">${nations.map((n) => `<option value="n:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup><optgroup label="Regions of England">${regions.map((n) => `<option value="r:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup></select>`;
     bar.appendChild(lab);
     const sel = lab.querySelector("select");
     sel.onchange = () => {
@@ -926,9 +936,11 @@
       const e = res.get(rec.iso3);
       return e && e.match ? cs(rec[cs.f.key]) : null;
     };
+    const nbSel = new Set(state.selected ? NB.get(state.selected) || [] : []);
     paths
-      .attr("class", (d) => clsFor(d.rec) + (d.rec && d.rec.iso3 === state.selected ? " sel" : ""))
+      .attr("class", (d) => clsFor(d.rec) + (d.rec && d.rec.iso3 === state.selected ? " sel" : nbSel.has(d.id) ? " nbr" : ""))
       .style("fill", (d) => fillFor(d.rec));
+    paths.filter(".nbr").raise(); paths.filter(".sel").raise();
     drawDots();
     drawCities();
     renderSolo();
@@ -949,6 +961,7 @@
     renderViews();
     renderModes();
     renderChips(act);
+    renderCrumbs();
     $("#sentence").innerHTML = sentence(matches.length, act);
     const ca = $("#clearAll"); if (ca) ca.onclick = clearAll;
     renderLegend(cs, act);
@@ -1447,7 +1460,7 @@
   function renderStarter(act) {
     const el = $("#starter");
     if (window.WQ) return window.WQ.renderCard(el);
-    el.hidden = !!state.filters.length || state.starterHidden || !!state.flow;
+    el.hidden = !!state.filters.length || state.starterHidden || !!state.flow || (desk() && !!state.selected);
     if (el.hidden) return;
     const pz = todaysPuzzle();
     el.innerHTML = `
@@ -1735,9 +1748,12 @@
   }
   // zoom so a country fills about 38% of the map (its biggest piece, so far-flung islands don't shrink it)
   function zoomToCountry(iso) {
-    if (state.view !== "map") return;
+    if (state.view !== "map" && !desk()) return;
     const g = geo.find((d) => d.rec?.iso3 === iso);
     if (!g) return;
+    // the UK site: the area with its neighbours, so you can see where it is
+    const near = (NB.get(iso) || []).map((n) => geo.find((d) => d.id === n)).filter((d) => d && !insetFor(d.id));
+    if (!insetFor(iso) && near.length) { zoomTo(path.bounds({ type: "FeatureCollection", features: [g, ...near] }), 0.85); return; }
     let target = g;
     if (g.geometry?.type === "MultiPolygon") {
       const parts = g.geometry.coordinates.map((c) => ({ type: "Feature", geometry: { type: "Polygon", coordinates: c } }));
@@ -1748,6 +1764,17 @@
       target = spread > main * 3 ? biggest : g;
     }
     zoomTo(path.bounds(target), 0.38);
+  }
+  function zoomToGroup(kind, name) {
+    const fs = geo.filter((d) => d.rec && (kind === "nation" ? d.rec.nation === name : d.rec.region === name) && !insetFor(d.id));
+    if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.9);
+  }
+  function selectArea(iso, zoomIt = true) {
+    state.selected = iso; state.open = null;
+    if (state.view !== "map" && !desk()) state.view = "map";
+    render();
+    if (zoomIt) zoomToCountry(iso);
+    $("#results")?.scrollTo?.({ top: 0 });
   }
   function zoomTo(b, frac = 0.8) {
     if (!b) return;
@@ -1849,6 +1876,8 @@
     });
     else list.sort((a, b) => (dir === "desc" ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)));
     const valF = combo ? null : sf || (colourKey() ? F[colourKey()] : rangeAct[0]) || null;
+    lastListOrder = list.map((r) => r.iso3);
+    if (desk()) return renderTable(el, { list, matches, act, rangeAct, sortKey, sf, dir, combo, total: pool().length });
     // quick sort: A–Z, each number filter, and a combined score when there are two or more
     const qs = [["__name", "A–Z"], ...rangeAct.slice(0, 5).map((f) => [f.key, f.short || f.label]), ...(rangeAct.length >= 2 ? [["__combo", "Combined"]] : [])];
     const qsOn = combo ? "__combo" : sf ? sortKey : "__name";
@@ -1992,6 +2021,128 @@
     }
     return out;
   }
+  // ---------- The results as a table (laptop or bigger) ----------
+  const DEFAULT_COLS = window.DEFAULT_COLUMNS || ["population", "median_age", "pct_65plus"];
+  function renderTable(el, o) {
+    const { list, matches, act, rangeAct, sortKey, sf, dir, combo, total } = o;
+    const shadeF = colourKey() ? F[colourKey()] : null;
+    // columns: the measure the list is sorted or shaded by, each number filter, then a few useful ones
+    const keys = [];
+    const addK = (k) => { if (k && F[k] && F[k].type === "range" && !F[k].target && !keys.includes(k)) keys.push(k); };
+    addK(sf?.key); addK(shadeF?.key); rangeAct.forEach((f) => addK(f.key)); DEFAULT_COLS.forEach(addK);
+    const cols = keys.slice(0, 5).map((k) => F[k]);
+    const barF = cols[0];
+    const ext = barF ? d3.extent(matches, (r) => r[barF.key]) : null;
+    const barW = (v) => (v == null || !ext || ext[1] === ext[0] ? 0 : Math.round(6 + 54 * (v - Math.min(0, ext[0])) / (ext[1] - Math.min(0, ext[0]))));
+    const cs = lastCS && barF && lastCS.f?.key === barF.key ? lastCS : null;
+    const arrow = (k) => (sortKey === k || (k === "__name" && !sf && !combo) ? (dir === "desc" ? " ↓" : " ↑") : "");
+    const th = (k, label, num) => `<th class="${num ? "num" : ""}${(sortKey === k || (k === "__name" && !sf && !combo)) ? " on" : ""}"><button type="button" data-sort="${k}" title="Sort by ${esc(label)}">${esc(label)}${arrow(k)}</button></th>`;
+    const near = [...lastEval.groups.entries()];
+    const scrollTop = el.querySelector(".tablewrap2")?.scrollTop || 0;
+    el.innerHTML = `<div class="rtab">
+      <div class="rtop"><span class="n num">${matches.length}</span><span class="of">${act.length ? `of ${total} areas match` : `areas`}</span>
+        <label class="shadeby">Shade the map by <select id="colSel" aria-label="Shade the map by" data-pick><option value="">Automatic</option><option value="none" ${state.colourBy === "none" ? "selected" : ""}>Single colour</option>${groupedOptions(state.colourBy)}</select></label></div>
+      ${combo ? `<p class="note">Combined score: each area's average position across ${esc(rangeAct.map((f) => f.short || f.label).join(", "))}, from 0 to 100.</p>` : ""}
+      <div class="tablewrap2"><table class="rtable"><thead><tr><th class="rk">#</th>${th("__name", "Area")}${combo ? th("__combo", "Combined", true) : ""}${cols.map((f) => th(f.key, f.short || f.label, true)).join("")}</tr></thead>
+      <tbody>${list.map((r, i) => `<tr class="trow${r.iso3 === state.selected ? " sel" : ""}" data-iso="${r.iso3}" tabindex="0"><td class="rk num">${i + 1}</td>
+        <td class="nm"><span class="an">${esc(r.name)}</span><span class="ar">${esc(r.region === r.nation ? r.nation : r.region)}</span></td>
+        ${combo ? `<td class="num">${combo.get(r.iso3) ?? "–"}</td>` : ""}
+        ${cols.map((f, j) => { const v = r[f.key]; return `<td class="num">${j === 0 && v != null ? `<span class="tbar" style="width:${barW(v)}px;${cs ? `background:${cs(v)}` : ""}"></span>` : ""}${v == null ? `<span class="nodata">no data</span>` : esc(fmtShort(f, v))}</td>`; }).join("")}</tr>`).join("")}</tbody></table>
+      ${!list.length ? `<p class="empty">No areas match all your filters. Try widening one of them.</p>` : ""}
+      ${near.map(([key, nl]) => { const fl = act.find((x) => x.key === key); nl.sort((a, b) => a.name.localeCompare(b.name));
+        return `<div class="nearmiss"><h4>Near misses: fail only “${esc(chipLabel(fl))}” (${nl.length})</h4><div class="nchips">${nl.slice(0, 30).map((r) => `<button type="button" class="nchip" data-iso="${r.iso3}">${esc(r.name)}</button>`).join("")}${nl.length > 30 ? `<span class="more">and ${nl.length - 30} more</span>` : ""}</div></div>`; }).join("")}
+      </div></div>`;
+    el.querySelector(".tablewrap2").scrollTop = scrollTop;
+    $("#colSel").onchange = (e) => { state.colourBy = e.target.value; render(); };
+    el.querySelectorAll("th button[data-sort]").forEach((b) => (b.onclick = () => {
+      const k = b.dataset.sort, on = sortKey === k || (k === "__name" && !sf && !combo);
+      if (on) state.sortDir = dir === "desc" ? "asc" : "desc";
+      else { state.sort = k; state.sortDir = null; }
+      render();
+    }));
+    el.querySelectorAll("tr.trow, .nchip").forEach((b) => {
+      b.onclick = () => selectArea(b.dataset.iso);
+      b.onkeydown = (e) => { if (e.key === "Enter") selectArea(b.dataset.iso); };
+      b.onmouseenter = () => highlight(b.dataset.iso, true);
+      b.onmouseleave = () => highlight(b.dataset.iso, false);
+    });
+  }
+
+  // ---------- One area: how it compares, and ways to move on ----------
+  const HEADLINE = () => (window.HEADLINE || ["population", "median_age", "pct_0_15", "pct_65plus", "pop_change_10y", "density"]).filter((k) => F[k]);
+  function similarAreas(r, n = 6) {
+    const ks = HEADLINE(), all = rows.filter((x) => x.sovereign);
+    const tf = (k, v) => (F[k].scale === "log" ? Math.log(Math.max(v, 1e-9)) : v);
+    const st = ks.map((k) => { const vs = all.map((x) => x[k]).filter((v) => v != null).map((v) => tf(k, v)); return [d3.mean(vs), d3.deviation(vs) || 1]; });
+    const z = (x) => ks.map((k, i) => (x[k] == null ? null : (tf(k, x[k]) - st[i][0]) / st[i][1]));
+    const me = z(r);
+    return all.filter((x) => x !== r).map((x) => { const zx = z(x); let d = 0, m = 0; zx.forEach((v, i) => { if (v != null && me[i] != null) { d += (v - me[i]) ** 2; m++; } }); return [x, m ? Math.sqrt(d / m) : 99]; })
+      .sort((a, b) => a[1] - b[1]).slice(0, n).map((x) => x[0]);
+  }
+  function areaSummaryHTML(r) {
+    const all = rows.filter((x) => x.sovereign);
+    const med = (k, fil) => d3.median(all.filter(fil), (x) => x[k]);
+    const cards = HEADLINE().filter((k) => r[k] != null).map((k) => {
+      const f = F[k], v = r[k];
+      const vs = all.map((x) => x[k]).filter((x) => x != null);
+      const below = vs.filter((x) => x < v).length, above = vs.filter((x) => x > v).length, pct = Math.round((100 * below) / (vs.length - 1 || 1));
+      const rankTxt = !above ? "Highest of all UK areas" : !below ? "Lowest of all UK areas" : `Higher than ${pct}% of UK areas`;
+      const reg = r.region !== r.nation ? med(k, (x) => x.region === r.region) : null, nat = med(k, (x) => x.nation === r.nation), uk = med(k, () => true);
+      const yr = typeof f.year === "string" && r[f.year] ? r[f.year] : null;
+      return `<div class="scard"><div class="sk">${esc(f.short || f.label)}${yr ? ` <span>${yr}</span>` : ""}</div><div class="sv num">${esc(fmtShort(f, v))}</div>
+        <div class="sc">${reg != null ? `Region <b>${esc(fmtShort(f, reg))}</b> · ` : ""}${esc(r.nation)} <b>${esc(fmtShort(f, nat))}</b> · UK <b>${esc(fmtShort(f, uk))}</b></div>
+        <div class="sp">${rankTxt}</div></div>`;
+    }).join("");
+    const nbs = (NB.get(r.iso3) || []).map((i) => byIso.get(i)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+    const sim = similarAreas(r);
+    const chip = (x) => `<button type="button" class="achip" data-iso="${x.iso3}">${esc(x.name)}</button>`;
+    return `<div class="asum"><div class="scards">${cards}</div>
+      <p class="snote">Region, nation and UK figures are the typical (median) area. Hover a measure name in the full profile below for its source.</p>
+      <div class="anav">
+        <div class="abox"><h4>Neighbouring areas</h4><div class="achips">${nbs.length ? nbs.map(chip).join("") : `<span class="snote">None: it has no land border with another area.</span>`}</div></div>
+        <div class="abox"><h4>Similar areas</h4><div class="achips">${sim.map(chip).join("")}</div><p class="snote">Closest on ${esc(HEADLINE().map((k) => (F[k].short || F[k].label).toLowerCase()).join(", "))}.</p></div>
+        <div class="abox"><h4>Show all the areas in</h4><div class="achips">${r.region !== r.nation ? `<button type="button" class="achip go" data-k="region" data-v="${esc(r.region)}">${esc(r.region)}</button>` : ""}<button type="button" class="achip go" data-k="nation" data-v="${esc(r.nation)}">${esc(r.nation)}</button></div></div>
+      </div></div>`;
+  }
+  function showGroup(k, v) {
+    state.filters = state.filters.filter((x) => x.key !== k);
+    const fl = makeFilter(k); fl.values = [v]; state.filters.push(fl);
+    state.selected = null; state.open = null;
+    render();
+    zoomToGroup(k, v);
+  }
+  function bindAreaNav(el) {
+    el.querySelectorAll(".achip[data-iso]").forEach((b) => {
+      b.onclick = () => selectArea(b.dataset.iso);
+      b.onmouseenter = () => highlight(b.dataset.iso, true);
+      b.onmouseleave = () => highlight(b.dataset.iso, false);
+    });
+    el.querySelectorAll(".achip.go").forEach((b) => (b.onclick = () => showGroup(b.dataset.k, b.dataset.v)));
+  }
+  // the breadcrumb above the panel: United Kingdom › nation › region › area, with previous and next
+  function renderCrumbs() {
+    const trail = $("#crumbTrail"), sel = $("#crumbSel");
+    if (!trail) return;
+    const r = state.selected && byIso.get(state.selected);
+    if (sel) sel.hidden = !!r;
+    if (!r) { trail.innerHTML = ""; trail.hidden = true; return; }
+    trail.hidden = false;
+    const order = lastListOrder.includes(r.iso3) ? lastListOrder : rows.filter((x) => x.sovereign).sort((a, b) => a.name.localeCompare(b.name)).map((x) => x.iso3);
+    const i = order.indexOf(r.iso3), prev = byIso.get(order[i - 1]), next = byIso.get(order[i + 1]);
+    const steps = [`<button type="button" data-go="uk">United Kingdom</button>`, `<button type="button" data-go="nation" data-v="${esc(r.nation)}">${esc(r.nation)}</button>`];
+    if (r.region !== r.nation) steps.push(`<button type="button" data-go="region" data-v="${esc(r.region)}">${esc(r.region)}</button>`);
+    steps.push(`<b>${esc(r.name)}</b>`);
+    trail.innerHTML = `<nav class="trail" aria-label="Where this area is">${steps.join(`<span class="sep" aria-hidden="true">›</span>`)}</nav>
+      <span class="pn"><button type="button" class="tolist" data-go="list" title="Back to the list">☰ List</button>${prev ? `<button type="button" data-iso="${prev.iso3}" title="Previous in the list">‹ ${esc(prev.name)}</button>` : ""}<span class="pos">${i + 1} of ${order.length}</span>${next ? `<button type="button" data-iso="${next.iso3}" title="Next in the list">${esc(next.name)} ›</button>` : ""}</span>`;
+    trail.querySelectorAll("button[data-iso]").forEach((b) => (b.onclick = () => selectArea(b.dataset.iso)));
+    trail.querySelectorAll("button[data-go]").forEach((b) => (b.onclick = () => {
+      const g = b.dataset.go;
+      state.selected = null; render();
+      if (g === "uk") svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+      else if (g !== "list") zoomToGroup(g, b.dataset.v);
+    }));
+  }
+
   function rowHTML(r, sf, fail, override, pos) {
     const val = override !== undefined ? `<span class="val num" title="Combined score">${override ?? "–"}</span>` : sf ? `<span class="val num">${fmtShort(sf, r[sf.key])}</span>` : "";
     const why = fail ? `<span class="why">✕ ${esc(F[fail.key].short || F[fail.key].label)}</span>` : "";
@@ -2113,7 +2264,7 @@
     if (!r) { state.selected = null; return render(); }
     if (focusFor !== r.iso3) { focusFor = r.iso3; showFull = false; }
     // with filters on, show how the country does on them first; the whole profile is one click away
-    if (lastEval.act.length && !showFull && state.view === "map") {
+    if (lastEval.act.length && !showFull && state.view === "map" && !desk()) {
       const e0 = lastEval.res.get(r.iso3);
       el.innerHTML = `<div class="detail">
         <button type="button" class="linkbtn back" id="back">← Back to results</button>
@@ -2210,9 +2361,9 @@
     el.innerHTML = `<div class="detail pdetail">
       <button type="button" class="linkbtn back" id="back">← Back to results</button>
       <h2><span>${r.flag || ""}</span>${esc(r.name)}</h2>
-      <p class="sub">${esc([r.capital && "Capital: " + r.capital, r.subregion].filter(Boolean).join(" · "))}${r.sovereign ? "" : " · Territory or partially recognised"}</p>
+      <p class="sub">${esc([r.county && r.county !== r.name ? r.county : "", r.region !== r.nation ? r.region : "", r.nation, r.population ? d3.format(",")(r.population) + " people" + (r.population_year ? ` (mid-${r.population_year})` : "") : ""].filter(Boolean).join(" · "))}</p>
       ${badge}
-      <dl class="pkeys">${keyFacts}</dl>
+      ${desk() ? areaSummaryHTML(r) + (lastEval.act.length ? `<h4 class="pfh">On your filters</h4>${focusHTML(r)}` : "") : `<dl class="pkeys">${keyFacts}</dl>`}
       ${window.WK ? `<button type="button" class="linkbtn wsadd" id="wsCountry">＋ Add these key facts to my worksheet</button>` : ""}
       ${window.openFactfile ? `<button type="button" class="ffopen" id="ffOpen">📄 Area factfile <span>the full picture, to print or download</span></button>` : ""}
       ${state.year ? `<p class="sub">Measures with yearly data show <b>${state.year}</b>; the rest show the latest figures.</p>` : ""}
@@ -2225,6 +2376,7 @@
     $("#pOpenAll").onclick = () => el.querySelectorAll(".psec").forEach((d) => (d.open = true));
     $("#pCloseAll").onclick = () => el.querySelectorAll(".psec").forEach((d) => (d.open = false));
     $("#back").onclick = () => { state.selected = null; render(); };
+    if (desk()) bindAreaNav(el);
     if (state.mode !== "physical") window.WV?.bindProfile(el, r);
     if ($("#ffOpen")) $("#ffOpen").onclick = () => window.openFactfile?.(r.iso3);
     $("#wsCountry") && ($("#wsCountry").onclick = () => window.WK.addCountry(r.iso3));
@@ -2515,6 +2667,13 @@
     const btn = document.querySelector(`.theme-btn[data-theme="${t.id}"]`), host = panel.offsetParent, cp = $("#cpanel");
     if (!btn || !host) return;
     const hb = host.getBoundingClientRect(), bb = btn.getBoundingClientRect(), pb = cp.getBoundingClientRect();
+    const addB = $("#addFilter");
+    if (desk() && addB) {
+      const ab = addB.getBoundingClientRect(), left = Math.max(8, ab.left - hb.left);
+      panel.style.left = left + "px"; panel.style.top = (ab.bottom - hb.top + 8) + "px";
+      panel.style.maxWidth = (hb.width - left - 16) + "px";
+      return;
+    }
     // the panel sits on the right of the page on the UK site, so the flyout opens to its left
     if (pb.left > hb.left + hb.width / 2) panel.style.left = Math.max(8, pb.left - hb.left - panel.offsetWidth - 8) + "px";
     else panel.style.left = (pb.right - hb.left + 8) + "px";
@@ -2920,7 +3079,7 @@
     zoomBy: (f) => svg.transition().duration(250).call(zoom.scaleBy, f),
     panBy: (dx, dy) => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.translateBy, dx / t.k, dy / t.k); },
     resetZoom: () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity),
-    zoomToCountry: (iso) => zoomToCountry(iso), insetShift,
+    zoomToCountry: (iso) => zoomToCountry(iso), insetShift, selectArea, zoomToGroup, openAbout: () => openAbout(), NB,
     project: (lon, lat) => projection([lon, lat]), geoPath: () => path, landNode: () => gLand.node(), get k() { return d3.zoomTransform(svg.node()).k; },
     layer: (name) => { let g = gRoot.select(`g.layer-${name}`); if (g.empty()) g = gRoot.append("g").attr("class", `layer-${name}`); return g; },
     zoomToPoint: (lon, lat, k = 4) => { const [x, y] = projection([lon, lat]); const vb = svg.attr("viewBox").split(" ").map(Number); svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(vb[2] / 2 - x * k, vb[3] / 2 - y * k).scale(k)); },
@@ -2991,7 +3150,7 @@
       // the quiz card sits at the bottom of the map, centred under southern Africa (open ocean), so the map keeps its full size
       const st = $("#starter"), stage = $("#mapstage");
       if (mapLeftPad) { mapLeftPad = 0; layout(); }
-      const open = st && !st.hidden && !narrow() && st.offsetWidth > 0;
+      const open = st && !st.hidden && !narrow() && st.offsetWidth > 0 && stage.contains(st);
       // the card may cover the Southern Ocean (about 60px) but not much more
       // if the card has been moved, the map only makes room when the card is still low down
       const moved = open && st.classList.contains("moved"), sh = stage.offsetHeight;

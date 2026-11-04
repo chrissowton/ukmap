@@ -44,7 +44,7 @@ window.NATIONS = ["England", "Wales", "Scotland", "Northern Ireland"];
 // Islands drawn in a box nearer the mainland so the UK fits the screen better (as on Ordnance Survey maps).
 // dx, dy: how far to move them, in degrees of longitude and latitude. contains(): which points belong to them.
 window.MAP_INSETS = [
-  { codes: ["S12000027"], label: "Shetland (moved closer)", dx: 1.65, dy: -1.5,
+  { codes: ["S12000027"], label: "Shetland (moved closer)", dx: -6.0, dy: -0.95,
     contains: (lon, lat) => lat > 59.7 && lon > -2.3 && lon < -0.6 },
 ];
 window.NATION_CODES = { E: "England", W: "Wales", S: "Scotland", N: "Northern Ireland" };

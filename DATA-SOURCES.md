@@ -2,7 +2,7 @@
 
 Every figure on Which Places? comes from an official, openly licensed source. The site's "About this data" box gives the source, licence, years and citation for each measure.
 
-## Release 1.0.1
+## Releases 1.0.1 and 1.0.2
 
 | Data | Original publisher | How we got it | Licence |
 | --- | --- | --- | --- |

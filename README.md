@@ -6,10 +6,10 @@ Free, open maps and data for every local authority in the UK, for charities, com
 
 Which Places? is built from [Which Countries?](https://github.com/chrissowton/worldmap), the open-source world map for geography, and shares its code.
 
-## What's in release 1.0.1
+## What's in release 1.0.2
 
 - The 361 local authorities of England, Wales, Scotland and Northern Ireland (detailed May 2025 boundaries), grouped into the 12 UK regions and the four nations, with Shetland in an inset and a Go to menu for every nation and region.
-- A layout made for a tall country: the map on the left at full height, the controls and results stacked on the right.
+- A layout made for a tall country: the map on the left at full height; on the right, a trail (United Kingdom › nation › region › area) with previous and next, the filters as chips, a sortable results table, and area profiles comparing each place with its region, nation and the UK.
 - Population, density, growth, median age and age groups, every year from 1991 (2001 in Northern Ireland) to 2025, with a population pyramid for every area.
 - Filters, Compare, Rankings, Charts, Insights, the statistics toolkit, About this data, downloads (PNG, SVG, CSV), share links, embedding, and a page for every measure (`m/`).
 

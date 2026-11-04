@@ -12,10 +12,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="style.css?v=2">
-<link rel="preload" href="areas.json?v=2" as="fetch" crossorigin="anonymous">
-<link rel="preload" href="areas.topo.json?v=2" as="fetch" crossorigin="anonymous">
-<link rel="preload" href="timeseries.json?v=2" as="fetch" crossorigin="anonymous">
+<link rel="stylesheet" href="style.css?v=4">
+<link rel="preload" href="areas.json?v=3" as="fetch" crossorigin="anonymous">
+<link rel="preload" href="areas.topo.json?v=3" as="fetch" crossorigin="anonymous">
+<link rel="preload" href="timeseries.json?v=3" as="fetch" crossorigin="anonymous">
 <!-- start downloading the main data straight away, while the scripts load -->
 <link rel="canonical" href="https://chrissowton.github.io/ukmap/">
 <meta property="og:title" content="Which Places? Open maps and data for every UK local authority">
@@ -30,7 +30,7 @@
   </div>
   <div class="add">
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-    <input id="addInput" type="search" autocomplete="off" placeholder="Search for a place or a measure" aria-label="Search for a place or a measure" aria-controls="addMenu" aria-expanded="false">
+    <input id="addInput" type="search" autocomplete="off" placeholder="Search a place or a measure" aria-label="Search for a place or a measure" aria-controls="addMenu" aria-expanded="false">
     <div id="addMenu" class="menu" role="listbox" hidden></div>
   </div>
   <div id="modes" hidden title="Switch between human and physical geography. Your filters stay, so you can mix both." class="modes" role="radiogroup" aria-label="Kind of geography">
@@ -126,18 +126,19 @@
 <!--/APP-->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
-<script src="filters.js?v=2"></script>
-<script src="glossary.js?v=2"></script>
-<script src="links.js?v=2"></script>
-<script src="player.js?v=2"></script>
-<script src="picker.js?v=2"></script>
-<script src="views.js?v=2"></script>
-<script src="charts.js?v=2"></script>
-<script src="insights.js?v=2"></script>
-<script src="app.js?v=2"></script>
-<script src="stats.js?v=2"></script>
-<script src="access.js?v=2"></script>
-<script src="layout.js?v=2"></script>
-<script src="about.js?v=2"></script>
+<script src="filters.js?v=4"></script>
+<script src="glossary.js?v=4"></script>
+<script src="links.js?v=4"></script>
+<script src="player.js?v=4"></script>
+<script src="picker.js?v=4"></script>
+<script src="views.js?v=4"></script>
+<script src="charts.js?v=4"></script>
+<script src="insights.js?v=4"></script>
+<script src="app.js?v=4"></script>
+<script src="stats.js?v=4"></script>
+<script src="access.js?v=4"></script>
+<script src="layout.js?v=4"></script>
+<script src="about.js?v=4"></script>
+<script src="shell.js?v=4"></script>
 </body>
 </html>

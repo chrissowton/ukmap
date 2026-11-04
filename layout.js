@@ -59,7 +59,12 @@
     if (box.parentElement !== dock) dock.prepend(box);
     MAPBOXES.forEach((sel) => { const el = $(sel); if (el && el.parentElement !== box && !el.classList.contains("is-fs")) box.appendChild(el); });
     const btns = $("#mapbtns"), mm = $("#mmBtn"), mmCard = $("#mmCard");
-    if (wide.matches) {
+    if (document.body.classList.contains("desk")) {
+      // the UK layout: Map style is a small button with the zoom buttons, and its card opens beside them
+      const z = $(".zoom");
+      if (mm && z && mm.parentElement !== z) z.prepend(mm);
+      if (mmCard && mmCard.parentElement !== stage && !mmCard.classList.contains("is-fs")) stage.appendChild(mmCard);
+    } else if (wide.matches) {
       if (btns && btns.parentElement !== dock) dock.appendChild(btns);
       if (btns && mm && mm.parentElement !== btns) btns.appendChild(mm);
       if (mmCard && mmCard.parentElement !== box && !mmCard.classList.contains("is-fs")) box.prepend(mmCard);
