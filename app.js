@@ -4,7 +4,7 @@
 
   // ---------- Load data ----------
   // ?v= makes browsers fetch fresh data after the site is updated (raise it in index.html too)
-  const DATA_VERSION = "1";
+  const DATA_VERSION = "2";
   // the single-file version carries its data compressed, and unpacks it first
   if (window.__READY__) await window.__READY__;
   const loadJSON = (url) => fetch(url + "?v=" + DATA_VERSION).then((r) => { if (!r.ok) throw new Error(url); return r.json(); });
@@ -585,6 +585,14 @@
   // map areas are joined to the data by their ONS code (held in the field "iso3", the world site's name for it)
   let geo = topojson.feature(topo, topo.objects.areas).features;
   geo.forEach((d) => { d.rec = byIso.get(d.id) || null; });
+  // Islands drawn in a box nearer the mainland, as on Ordnance Survey maps (window.MAP_INSETS in filters.js).
+  // Their shapes are moved before drawing; insetShift() moves any point inside them the same way.
+  const INSETS = window.MAP_INSETS || [];
+  const insetFor = (code) => INSETS.find((x) => x.codes.includes(code));
+  const shiftCoords = (c, dx, dy) => (typeof c[0] === "number" ? [c[0] + dx, c[1] + dy] : c.map((x) => shiftCoords(x, dx, dy)));
+  geo.forEach((d) => { const ins = insetFor(d.id); if (ins) d.geometry = { ...d.geometry, coordinates: shiftCoords(d.geometry.coordinates, ins.dx, ins.dy) }; });
+  rows.forEach((r) => { const ins = insetFor(r.iso3); if (ins && r.latlng) r.latlng = [r.latlng[0] + ins.dy, r.latlng[1] + ins.dx]; });
+  const insetShift = (lon, lat, code) => { const ins = code ? insetFor(code) : INSETS.find((x) => x.contains && x.contains(lon, lat)); return ins ? [lon + ins.dx, lat + ins.dy] : [lon, lat]; };
   // a Transverse Mercator centred on 2°W, like the Ordnance Survey's National Grid
   const projection = d3.geoTransverseMercator().rotate([2, -49]);
   const path = d3.geoPath(projection);
@@ -613,6 +621,16 @@
       projection.translate([t[0] + (left + w - padX) / 2 - (b[0][0] + b[1][0]) / 2, t[1] + top - b[0][1]]);
     }
     paths.attr("d", path);
+    // a box round each inset, with its name
+    const frames = INSETS.map((ins) => {
+      const fs = geo.filter((d) => ins.codes.includes(d.id));
+      if (!fs.length) return null;
+      const [[x0, y0], [x1, y1]] = path.bounds({ type: "FeatureCollection", features: fs });
+      return { ...ins, x: x0 - 6, y: y0 - 6, w: x1 - x0 + 12, h: y1 - y0 + 12 };
+    }).filter(Boolean);
+    const fr = gLand.selectAll("g.inset").data(frames).join((en) => { const g = en.append("g").attr("class", "inset"); g.append("rect"); g.append("text"); return g; });
+    fr.select("rect").attr("x", (d) => d.x).attr("y", (d) => d.y).attr("width", (d) => d.w).attr("height", (d) => d.h);
+    fr.select("text").attr("x", (d) => d.x + 4).attr("y", (d) => d.y + d.h + 11).text((d) => d.label);
     riverPaths.attr("d", path); lakePaths.attr("d", path);
     invalidatePoints();
     window.WP?.layout(Math.max(0.55, Math.min(1, w / 1100)));
@@ -640,6 +658,25 @@
   $("#zin").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1.6);
   $("#zout").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.6);
   $("#zreset").onclick = () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+  // ---------- Go to a nation or region ----------
+  (function goTo() {
+    const bar = $(".bar");
+    if (!bar || $("#goTo")) return;
+    const nations = window.NATIONS || [], regions = (window.REGIONS || []).filter((r) => !nations.includes(r));
+    const lab = document.createElement("label");
+    lab.className = "goto"; lab.title = "Zoom the map to a nation or region";
+    lab.innerHTML = `<span>Go to</span><select id="goTo"><option value="">The whole UK</option><optgroup label="Nations">${nations.map((n) => `<option value="n:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup><optgroup label="Regions of England">${regions.map((n) => `<option value="r:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup></select>`;
+    bar.appendChild(lab);
+    const sel = lab.querySelector("select");
+    sel.onchange = () => {
+      const v = sel.value;
+      if (state.view !== "map") { state.view = "map"; render(); }
+      if (!v) { svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity); return; }
+      const [kind, name] = [v[0], v.slice(2)];
+      const fs = geo.filter((d) => d.rec && (kind === "n" ? d.rec.nation === name : d.rec.region === name) && !insetFor(d.id));
+      if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.9);
+    };
+  })();
 
   // ---------- Place names and physical features that appear as you zoom in ----------
   state.labels = true;
@@ -2478,7 +2515,9 @@
     const btn = document.querySelector(`.theme-btn[data-theme="${t.id}"]`), host = panel.offsetParent, cp = $("#cpanel");
     if (!btn || !host) return;
     const hb = host.getBoundingClientRect(), bb = btn.getBoundingClientRect(), pb = cp.getBoundingClientRect();
-    panel.style.left = (pb.right - hb.left + 8) + "px";
+    // the panel sits on the right of the page on the UK site, so the flyout opens to its left
+    if (pb.left > hb.left + hb.width / 2) panel.style.left = Math.max(8, pb.left - hb.left - panel.offsetWidth - 8) + "px";
+    else panel.style.left = (pb.right - hb.left + 8) + "px";
     const h = panel.offsetHeight;
     panel.style.top = Math.max(8, Math.min(bb.top - hb.top - 14, hb.height - h - 8)) + "px";
   }
@@ -2772,7 +2811,7 @@
       <div class="tablewrap"><table><thead><tr><th>Source</th><th>Used for</th><th>Licence</th></tr></thead><tbody>
       ${used.map((k) => { const s = window.SOURCES[k]; const fs = FILTERS.filter((f) => f.source === k).map((f) => f.label); return `<tr><td><a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a></td><td>${esc(fs.join(", ") || ({ gdl: "Regions within areas: the HDI, life expectancy, schooling, income and gender measures for 1,800 regions", gapmincm: "Income mountains (Charts)", unppp: "The shaded ranges on population projections" }[k] || "Area shapes"))}</td><td>${esc(s.licence)}</td></tr>`; }).join("")}
       </tbody></table></div>
-      <p>Areas are the 361 local authorities (lower tier) of the UK, on May 2024 boundaries. Regions are the 12 ITL1 regions: the nine English regions, Wales, Scotland and Northern Ireland. Contains OS data © Crown copyright and database right.</p>
+      <p>Areas are the 361 local authorities (lower tier) of the UK, on detailed May 2025 boundaries (ONS, BGC). Shetland is drawn in a box closer to the mainland. Regions are the 12 ITL1 regions: the nine English regions, Wales, Scotland and Northern Ireland. Contains OS data © Crown copyright and database right.</p>
     </div>`;
     el.hidden = false;
     $("#aboutClose").onclick = () => (el.hidden = true);
@@ -2881,7 +2920,7 @@
     zoomBy: (f) => svg.transition().duration(250).call(zoom.scaleBy, f),
     panBy: (dx, dy) => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.translateBy, dx / t.k, dy / t.k); },
     resetZoom: () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity),
-    zoomToCountry: (iso) => zoomToCountry(iso),
+    zoomToCountry: (iso) => zoomToCountry(iso), insetShift,
     project: (lon, lat) => projection([lon, lat]), geoPath: () => path, landNode: () => gLand.node(), get k() { return d3.zoomTransform(svg.node()).k; },
     layer: (name) => { let g = gRoot.select(`g.layer-${name}`); if (g.empty()) g = gRoot.append("g").attr("class", `layer-${name}`); return g; },
     zoomToPoint: (lon, lat, k = 4) => { const [x, y] = projection([lon, lat]); const vb = svg.attr("viewBox").split(" ").map(Number); svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(vb[2] / 2 - x * k, vb[3] / 2 - y * k).scale(k)); },

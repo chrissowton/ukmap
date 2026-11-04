@@ -2,7 +2,7 @@
    The site's own files and its data are kept in the browser after the first visit, so it opens quickly and works
    without internet. Each visit checks for newer files in the background ("stale while revalidate").
    Change VERSION when you upload a new release, so old copies are cleared. */
-const VERSION = "wp-v1";
+const VERSION = "wp-v2";
 const CORE = ["./", "index.html", "style.css", "manifest.webmanifest", "icon-192.png"];
 
 self.addEventListener("install", (e) => {

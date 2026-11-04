@@ -41,6 +41,12 @@ window.REGION_COLOURS = {
   "South West": "#9edae5", "Wales": "#d62728", "Scotland": "#3949ab", "Northern Ireland": "#00897b",
 };
 window.NATIONS = ["England", "Wales", "Scotland", "Northern Ireland"];
+// Islands drawn in a box nearer the mainland so the UK fits the screen better (as on Ordnance Survey maps).
+// dx, dy: how far to move them, in degrees of longitude and latitude. contains(): which points belong to them.
+window.MAP_INSETS = [
+  { codes: ["S12000027"], label: "Shetland (moved closer)", dx: 1.65, dy: -1.5,
+    contains: (lon, lat) => lat > 59.7 && lon > -2.3 && lon < -0.6 },
+];
 window.NATION_CODES = { E: "England", W: "Wales", S: "Scotland", N: "Northern Ireland" };
 
 // Not used on the UK site (kept so shared code finds them)
@@ -136,7 +142,7 @@ window.SOURCES = {
     licence: "Open Government Licence v3.0",
   },
   onsgeo: {
-    name: "ONS Open Geography Portal: Local Authority Districts (May 2024) boundaries and lookups (via the geographr package). Contains OS data © Crown copyright and database right",
+    name: "ONS Open Geography Portal: Local Authority Districts (May 2025) Boundaries UK BGC, and the local authority to region lookup (via the geographr package). Contains OS data © Crown copyright and database right",
     url: "https://geoportal.statistics.gov.uk/",
     licence: "Open Government Licence v3.0",
   },

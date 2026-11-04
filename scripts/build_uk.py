@@ -7,9 +7,11 @@ Inputs (none of them are kept in this repository; see DATA-SOURCES.md):
                (ONS, Open Government Licence)
   --geographr  a copy of https://github.com/humaniverse/geographr
                (boundaries and lookups from the ONS Open Geography Portal, Open Government Licence)
+  --lad        Local Authority Districts (May 2025) Boundaries UK BGC (V2) as GeoJSON, from the ONS Open Geography Portal
+               (optional: detailed coastlines; without it the simplified boundaries in geographr are used)
 
     pip install pyreadr rdata shapely
-    python3 scripts/build_uk.py --els ../explore-local-statistics-data --geographr ../geographr
+    python3 scripts/build_uk.py --els ../explore-local-statistics-data --geographr ../geographr --lad LAD_MAY_2025_UK_BGC_V2.geojson
 
 Writes, into the site folder:
   areas.geo.json   the map (local authority boundaries, turned into areas.topo.json by mapshaper, see below)
@@ -18,7 +20,7 @@ Writes, into the site folder:
   pyramids.json    population pyramids every 5 years, 1991-2025
 
 Then make the small map file:
-    npx mapshaper areas.geo.json -rename-layers areas -o format=topojson id-field=code quantization=100000 areas.topo.json
+    npx mapshaper areas.geo.json -rename-layers areas -simplify 12% weighted keep-shapes -o format=topojson id-field=code quantization=200000 areas.topo.json
 """
 import argparse, csv, json, math, os, sys, warnings
 from collections import defaultdict
@@ -41,6 +43,9 @@ POP_INDICATORS = {
     "Percentage of the population aged 65+": "pct_65plus",
 }
 LA_PREFIXES = ("E06", "E07", "E08", "E09", "W06", "S12", "N09")
+# Barnsley and Sheffield were given new codes in 2025 after a small boundary change between them.
+# Most published figures still use the old codes, so the site keeps them: new code -> code used on the site.
+CODE_ALIASES = {"E08000038": "E08000016", "E08000039": "E08000019"}
 
 
 def read_rda(path, name):
@@ -63,24 +68,31 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--els", required=True)
     ap.add_argument("--geographr", required=True)
+    ap.add_argument("--lad", help="Local Authority Districts (May 2025) Boundaries UK BGC (V2), GeoJSON, from the ONS Open Geography Portal")
     ap.add_argument("--out", default=ROOT)
     a = ap.parse_args()
 
     from shapely.geometry import shape
 
     # ---------- Boundaries ----------
-    b = read_rda(os.path.join(a.geographr, "data", "boundaries_ltla24.rda"), "boundaries_ltla24")
+    # The detailed (BGC) boundaries if given, otherwise the simplified (BUC) ones from geographr.
+    def from_geographr():
+        b = read_rda(os.path.join(a.geographr, "data", "boundaries_ltla24.rda"), "boundaries_ltla24")
+        for _, r in b.iterrows():
+            polys = [[[[float(x), float(y)] for x, y in ring] for ring in poly] for poly in r["geometry"]]
+            yield str(r["ltla24_code"]), str(r["ltla24_name"]), polys
+
+    def from_bgc(path):
+        for f in json.load(open(path))["features"]:
+            p, g = f["properties"], f["geometry"]
+            polys = g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]
+            code = CODE_ALIASES.get(p["LAD25CD"], p["LAD25CD"])
+            yield code, p["LAD25NM"], polys
+
     feats, info = [], {}
-    for _, r in b.iterrows():
-        polys = []
-        for poly in r["geometry"]:
-            rings = []
-            for ring in poly:
-                pts = [[round(float(x), 5), round(float(y), 5)] for x, y in ring]
-                rings.append(pts)
-            polys.append(rings)
+    for code, name, polys in (from_bgc(a.lad) if a.lad else from_geographr()):
+        polys = [[[[round(x, 5), round(y, 5)] for x, y in ring] for ring in poly] for poly in polys]
         geom = {"type": "MultiPolygon", "coordinates": polys}
-        code, name = str(r["ltla24_code"]), str(r["ltla24_name"])
         shp = shape(geom)
         c = shp.representative_point()
         area = sum(ring_area_lonlat(p[0]) - sum(ring_area_lonlat(h) for h in p[1:]) for p in polys)
