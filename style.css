@@ -2665,3 +2665,73 @@ body.desk .tpanel .tp-tabs button { flex: none; border: 1px solid var(--line); b
 body.desk .tpanel .tp-tabs button:hover { border-color: var(--accent); }
 body.desk .tpanel .tp-tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 body.desk .tpanel .tp-body { columns: 2 260px; }
+
+/* release 1.2: census topics and city regions */
+[data-g="census-people"] { --gc: var(--g-population); }
+[data-g="census-health-and-care"] { --gc: var(--g-health); }
+[data-g="census-homes-and-households"] { --gc: var(--g-cities); }
+[data-g="census-work-and-learning"] { --gc: var(--g-work-money); }
+.gsum { margin: 4px 0 18px; padding: 14px 16px 6px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+.gsum .gs-head h2 { margin: 0; font-family: var(--display); font-size: 26px; letter-spacing: -.01em; }
+.gsum .gs-head p { margin: 2px 0 12px; color: var(--muted); font-size: 13.5px; }
+.gsum .scards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.gsum .approx { color: var(--muted); font-weight: 500; margin-right: 1px; }
+.gsum .gs-all { margin: 12px 0 4px; }
+.gsum .gs-all summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13.5px; }
+.gsum .gtable { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.gsum .gtable th, .gsum .gtable td { padding: 5px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); text-align: left; font-family: var(--body); }
+.gsum .gtable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gsum .gtable thead th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.gsum .gtable tr.gth th { padding-top: 12px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+.gsum .gtable .yr { color: var(--muted); font-size: 11.5px; }
+.gsum .gs-list { margin: 14px 0 0; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+
+/* =====================================================================
+   Release 1.3: neighbourhoods
+   ===================================================================== */
+#map .nbs path.nb { stroke: color-mix(in srgb, var(--surface) 75%, transparent); stroke-width: .35px; vector-effect: non-scaling-stroke; cursor: pointer; }
+#map .nbs path.nb:not([style*="fill"]) { fill: var(--land); }
+#map .nbs path.nb.hover { stroke: var(--ink); stroke-width: 1.4px; }
+#map .nbs path.nb.on { stroke: var(--ink); stroke-width: 2.4px; }
+#map .nblines path.nbline { fill: none; stroke: var(--ink); stroke-width: 1.6px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.nbctl { position: absolute; top: 12px; right: 12px; z-index: 7; padding: 8px 10px; max-width: min(300px, calc(100% - 80px)); font-size: 12.5px; box-shadow: 0 4px 14px rgba(0, 0, 0, .12); }
+.nbctl[hidden] { display: none; }
+.nbctl .nbsel { display: flex; flex-direction: column; gap: 3px; }
+.nbctl .nbsel span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.nbctl select { max-width: 100%; font-size: 12.5px; padding: 3px 6px; border-radius: 7px; }
+.nbkey { display: flex; align-items: center; gap: 2px; margin-top: 6px; }
+.nbkey i { flex: 1; height: 10px; min-width: 10px; border-radius: 2px; }
+.nbkey span { font-size: 10.5px; color: var(--muted); padding: 0 3px; white-space: nowrap; }
+.nbnote { margin: 4px 0 0; font-size: 10.5px; color: var(--muted); }
+@media (max-width: 760px) { .nbctl { top: auto; bottom: 70px; right: 8px; left: 8px; max-width: none; } }
+.dbar { display: inline-flex; gap: 2px; vertical-align: middle; }
+.dbar i { width: 11px; height: 11px; border-radius: 2px; background: color-mix(in srgb, var(--line) 70%, transparent); }
+.nbpage .sub { color: var(--muted); margin: 2px 0 14px; }
+.nbpage .code { font-family: var(--mono); font-size: 11.5px; margin-left: 6px; opacity: .8; }
+.nbdep { display: grid; grid-template-columns: minmax(220px, 1.2fr) minmax(200px, 1fr); gap: 10px 22px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 16px; }
+.nbdep .dk { font-size: 12px; color: var(--muted); }
+.nbdep .dv { font-family: var(--display); font-size: 26px; font-weight: 700; margin: 2px 0 6px; }
+.nbdep .dbar i { width: 16px; height: 14px; }
+.nbdep p { margin: 8px 0 0; font-size: 13.5px; }
+.nbdep .snote { grid-column: 1 / -1; margin: 0; }
+.nbdoms { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0; align-content: start; font-size: 13px; }
+.nbdoms dt { color: var(--muted); }
+.nbdoms dd { margin: 0; display: flex; align-items: center; gap: 8px; }
+@media (max-width: 1100px) { .nbdep { grid-template-columns: 1fr; } }
+.nbtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nbtable th, .nbtable td { padding: 5px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); text-align: left; font-family: var(--body); }
+.nbtable .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.nbtable thead th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.nbtable tr.gth th { padding-top: 12px; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+.nbtable tr.gth.sub th { font-size: 11px; padding-top: 8px; }
+.nbtable .linkbtn { text-align: left; }
+.nbnav { margin-top: 16px; }
+.nbbox .nbsumt { font-size: 13px; margin: 0 0 8px; }
+.nbhist { display: flex; align-items: flex-end; gap: 3px; height: 70px; }
+.nbhist span { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; }
+.nbhist i { width: 100%; border-radius: 2px 2px 0 0; min-height: 1px; }
+.nbhist em { font-style: normal; font-size: 10px; color: var(--muted); }
+.tooltip .tsub { color: var(--muted); font-size: 12px; }
+/* "Whole UK" sits beside the map buttons on a laptop, leaving the top right for the neighbourhood key */
+body.desk .ukbtn { left: 54px; transform: none; }
+body.desk .nbctl { max-width: min(270px, calc(100% - 190px)); }

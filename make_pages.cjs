@@ -12,6 +12,7 @@ ctx.window.window = ctx.window;
 vm.createContext(ctx);
 vm.runInContext(read("filters.js"), ctx);
 vm.runInContext(read("measures.js"), ctx);   // the local measures added in release 1.1
+vm.runInContext(read("census.js"), ctx);     // the census measures added in release 1.2
 const { FILTERS, SOURCES, SITE, FILTER_GROUPS, THEMES } = ctx.window;
 const BASE = (SITE.url || "https://chrissowton.github.io/ukmap/").replace(/\/?$/, "/");
 

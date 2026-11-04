@@ -60,7 +60,8 @@ window.SDGS = [];
 window.SDG_STATUS = [];
 
 window.FILTER_GROUPS = ["Places", "Population", "Age", "Money and work", "Housing", "Deprivation", "Health", "Wellbeing",
-  "Education and skills", "Getting connected", "Services and culture", "Environment"];
+  "Education and skills", "Getting connected", "Services and culture", "Environment",
+  "Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning"];
 // the measures on the cards at the top of each area's page (and used to find similar areas)
 window.HEADLINE = ["population", "median_age", "pct_65plus", "gdhi_pc", "child_pov_ahc", "claimant_rate", "life_exp_f", "dep_all"];
 
@@ -83,6 +84,14 @@ window.FILTERS = [
     say: (v) => `the area is in ${["Wales", "Scotland", "Northern Ireland", "London"].includes(v) ? v : "the " + v}`,
     source: "onsgeo", info: "The 12 regions used for official statistics (ITL1): the nine English regions, Wales, Scotland and Northern Ireland.",
     keywords: "region north south east west midlands london yorkshire itl",
+  },
+  {
+    key: "city", type: "cat", group: "Places",
+    label: "City region", short: "City region",
+    order: ["Greater London", "Greater Manchester", "West Midlands (combined authority)", "West Yorkshire", "South Yorkshire", "Liverpool City Region", "North East (combined authority)", "Tees Valley", "West of England", "Cambridgeshire and Peterborough", "East Midlands (combined county authority)", "York and North Yorkshire", "Hull and East Yorkshire", "Greater Lincolnshire", "Lancashire", "Devon and Torbay", "Cardiff Capital Region", "Swansea Bay City Region", "North Wales", "Glasgow City Region", "Edinburgh and South East Scotland City Region", "Aberdeen City Region", "Belfast City Region"],
+    say: (v) => `the area is in ${v}`,
+    source: "cityreg", info: "City regions: England's combined authorities (groups of councils with an elected mayor), Greater London, and the city regions of Wales, Scotland and Northern Ireland. Areas outside a city region have no value.",
+    keywords: "city region combined authority conurbation metro mayor greater manchester west midlands glasgow cardiff belfast",
   },
   num("area_km2", "Places", "Area", {
     short: "Area", scale: "log", format: "km2", source: "onsgeo", year: 2024,
@@ -155,6 +164,7 @@ window.SOURCES = {
     url: "https://geoportal.statistics.gov.uk/",
     licence: "Open Government Licence v3.0",
   },
+  cityreg: { name: "Combined authorities and city regions as used by ONS Explore Local Statistics (November 2026); members listed in scripts/city_regions.json", url: "https://www.gov.uk/guidance/combined-authorities", licence: "Open Government Licence v3.0" },
   myindex: { name: "Your own index, worked out on this site from the measures and weights you chose (each measure from its own source)", url: "#", licence: "—" },
 };
 
@@ -181,6 +191,14 @@ window.PUZZLES = [
 
 /* Families: related measures shown as ONE item in the filter menu, with a picker inside. */
 window.FAMILIES = [
+  { id: "eth", label: "Ethnic group", short: "Ethnic group", info: "Share of people in Asian, Black, mixed or other ethnic groups (census).",
+    variants: [["c_minority", "Not White (all)"], ["c_asian", "Asian"], ["c_black", "Black"]] },
+  { id: "tenure", label: "Housing tenure", short: "Tenure", info: "Whether households own or rent their home (census).",
+    variants: [["c_owner", "Home owners"], ["c_social_rent", "Social renting"], ["c_private_rent", "Private renting"]] },
+  { id: "care", label: "Unpaid carers", short: "Carers", info: "People who give unpaid care to someone with a long-term illness, disability or old age (census).",
+    variants: [["c_carers", "Any unpaid care"], ["c_carers50", "50 hours or more a week"]] },
+  { id: "rel", label: "Religion", short: "Religion", info: "Religion (census; a voluntary question).",
+    variants: [["c_no_religion", "No religion"], ["c_muslim", "Muslim"]] },
   { id: "le", label: "Life expectancy", short: "Life expectancy", info: "How long people can expect to live, and to live in good health.",
     variants: [["life_exp_f", "Women"], ["life_exp_m", "Men"], ["hle_f", "Healthy, women"], ["hle_m", "Healthy, men"]] },
   { id: "childpov", label: "Child poverty", short: "Child poverty", info: "Share of children in households below 60% of the median income, after or before housing costs.",
@@ -208,6 +226,7 @@ window.THEMES = [
   { id: "learning", label: "Education", groups: ["Education and skills"] },
   { id: "services", label: "Services", groups: ["Getting connected", "Services and culture"] },
   { id: "environment", label: "Environment", groups: ["Environment"] },
+  { id: "census", label: "Census", groups: ["Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning"] },
   { id: "places", label: "Places", groups: ["Places"] },
 ];
 window.PHYS_THEMES = [];

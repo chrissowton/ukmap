@@ -4,7 +4,7 @@
 
   // ---------- Load data ----------
   // ?v= makes browsers fetch fresh data after the site is updated (raise it in index.html too)
-  const DATA_VERSION = "5";
+  const DATA_VERSION = "7";
   // the single-file version carries its data compressed, and unpacks it first
   if (window.__READY__) await window.__READY__;
   const loadJSON = (url) => fetch(url + "?v=" + DATA_VERSION).then((r) => { if (!r.ok) throw new Error(url); return r.json(); });
@@ -17,6 +17,10 @@
     window.__FEATURES__ || null,
     window.__PHYSICAL__ || null,
   ]);
+  // figures for whole groups of councils: the UK, nations, regions and city regions (groups.json, from scripts/build_groups.py)
+  let GROUPS = new Map();
+  loadJSON("groups.json").then((d) => { GROUPS = new Map(d.groups.map((g) => [g.id, g])); render(); }).catch(() => {});
+  const groupId = (k, v) => (k === "city" ? "c:" + v : k === "nation" || (k === "region" && (window.NATIONS || []).includes(v)) ? "n:" + v : "r:" + v);
   // cities.json rows: [name, iso3, lat, lon, population, capital]
   const cities = cityRows.map(([name, iso3, lat, lon, pop, cap], id) => ({ id, name, iso3, lat, lon, city_population: pop, city_capital: !!cap }));
   // physical geography features (rivers, volcanoes, earthquakes…), from physical.js
@@ -644,11 +648,12 @@
   // On a laptop or bigger, make the map column exactly as wide as the UK's shape needs at full height,
   // leaving the rest of the screen to the panel. Returns true if the width changed.
   let mapWSet = 0;
+  const FOOT_ROOM = 96;   // room kept under the map for the key and year card (laptop layout)
   function fitMapWidth() {
     if (!desk()) return false;
     const H = window.innerHeight;
     const foot = $("#mapfoot");
-    const fp = foot && foot.offsetParent && !foot.classList.contains("empty") ? foot.offsetHeight + 22 : 16;
+    const fp = FOOT_ROOM;
     const b = d3.geoPath(d3.geoTransverseMercator().rotate(projection.rotate()).scale(1).translate([0, 0])).bounds(fcAll);
     const ratio = (b[1][0] - b[0][0]) / (b[1][1] - b[0][1]);
     const want = Math.round((H - 16 - fp) * ratio + 40);
@@ -666,7 +671,8 @@
     citySize = Math.max(0.45, Math.min(1, w / 1100));
     // a little room round the world, and space at the top for the quiz card when it sits there
     const foot = desk() ? $("#mapfoot") : null;
-    const footPad = foot && foot.offsetParent && !foot.classList.contains("empty") ? foot.offsetHeight + 22 : 0;
+    // a fixed space for the key card, so the map doesn't jump (and a zoomed-in view doesn't drift) when the card changes size
+    const footPad = foot ? FOOT_ROOM : 0;
     const padX = desk() ? 20 : Math.max(16, w * 0.025), top = Math.max(16, mapTopPad), bottom = Math.max(16, footPad), left = Math.max(padX, mapLeftPad);
     const fc = fcAll;
     projection.fitExtent([[left, top], [w - padX, Math.max(top + 120, h - bottom)]], fc);
@@ -709,6 +715,8 @@
     // widen a box if its name is longer than the islands are wide
     fr.each(function (d) { const tw = this.querySelector("text").getComputedTextLength?.() || 0; if (tw + 16 > d.w) { const ex = tw + 16 - d.w; d3.select(this).select("rect").attr("x", d.x - ex / 2).attr("width", tw + 16); d3.select(this).select("text").attr("x", d.x - ex / 2 + 8); } });
     riverPaths.attr("d", path); lakePaths.attr("d", path);
+    geoBounds = null;
+    if (typeof nbDraw === "function" && NBH.drawn.length) nbDraw();
     invalidatePoints();
     window.WP?.layout(Math.max(0.55, Math.min(1, w / 1100)));
     cities.forEach((c) => { delete c._pt; delete c._lpt; });
@@ -722,7 +730,7 @@
   }
   // the key card floats on the map on the desktop layout: when it changes size, refit the UK above it
   let footH = 0;
-  new ResizeObserver(() => { const h = $("#mapfoot")?.offsetHeight || 0; if (desk() && Math.abs(h - footH) > 4) { footH = h; layout(); } }).observe($("#mapfoot"));
+
   const zoom = d3.zoom().scaleExtent([1, 40]).on("zoom", (e) => {
     k = e.transform.k;
     gLabels.selectAll("text").attr("font-size", (d) => d.fs / k).attr("stroke-width", 3 / k).attr("x", (d) => (d.side ? 8 / k : d.isCity ? 5 / k : 0));
@@ -734,6 +742,7 @@
     gCities.selectAll("circle").attr("r", (d) => cityR(d) / k);
     window.WP?.zoomed(e.transform);
     showUkBtn();
+    if (e.sourceEvent || k >= 7) nbUpdate();
   });
   svg.call(zoom).on("dblclick.zoom", null);
   $("#zin").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1.6);
@@ -756,6 +765,235 @@
   const popGo = () => { if (POP) zoomToGroup("region", POP.region); };
   popZoom.on("click", (e) => { e.stopPropagation(); popGo(); }).on("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); popGo(); } });
   popFrame.on("click", (e) => { e.stopPropagation(); popGo(); });
+  // ---------- Neighbourhoods (release 1.3) ----------
+  // Every council's small areas (LSOAs in England and Wales, data zones in Scotland and Northern Ireland) are in their own
+  // file, nb/<council code>.json, loaded only when needed: when a council is open, or when the map is zoomed right in.
+  const NBH = { meta: null, tiles: new Map(), loading: new Map(), rows: new Map(), shade: "d", drawn: [] };
+  loadJSON("nb/index.json").then((m) => { NBH.meta = m; }).catch(() => {});
+  const NB_DECILE = { d: "Deprivation", di: "Income deprivation", de: "Employment deprivation", dh: "Health deprivation", dd: "Education deprivation" };
+  const NB_OTHER = { a0: ["Children (0 to 15)", "pct"], a65: ["Older people (65 and over)", "pct"], ma: ["Median age", "years"] };
+  const gNb = gRoot.insert("g", () => gDots.node()).attr("class", "nbs");
+  const gNbLine = gRoot.insert("g", () => gDots.node()).attr("class", "nblines");
+  const nbCtl = document.createElement("div");
+  nbCtl.id = "nbCtl"; nbCtl.className = "card nbctl"; nbCtl.hidden = true;
+  $("#mapstage").appendChild(nbCtl);
+  function nbLoad(la) {
+    if (NBH.tiles.has(la)) return Promise.resolve(NBH.tiles.get(la));
+    if (NBH.loading.has(la)) return NBH.loading.get(la);
+    const p = fetch(`nb/${la}.json?v=${DATA_VERSION}`).then((x) => (x.ok ? x.json() : null)).then((t) => {
+      if (!t) return null;
+      const obj = t.objects[Object.keys(t.objects)[0]];
+      const ins = insetFor(la);
+      const fs = topojson.feature(t, obj).features;
+      let outline = topojson.merge(t, obj.geometries);
+      if (ins) {   // Orkney and Shetland are drawn in their box, so their neighbourhoods move with them
+        fs.forEach((f) => { f.geometry = { ...f.geometry, coordinates: shiftCoords(f.geometry.coordinates, ins.dx, ins.dy) }; });
+        outline = { ...outline, coordinates: shiftCoords(outline.coordinates, ins.dx, ins.dy) };
+      }
+      fs.forEach((f) => NBH.rows.set(f.properties.c, f.properties));
+      const tile = { la, fs, outline };
+      NBH.tiles.set(la, tile);
+      return tile;
+    }).catch(() => null);
+    NBH.loading.set(la, p);
+    return p;
+  }
+  // which councils' neighbourhoods to show: the open one, and every council in view when zoomed right in
+  let geoBounds = null;
+  function nbWanted() {
+    const want = new Set();
+    if (state.selected && state.view === "map") want.add(state.selected);
+    if (k >= 7 && state.view === "map") {
+      if (!geoBounds) geoBounds = geo.filter((d) => d.rec).map((d) => [d.id, path.bounds(d)]);
+      const t = d3.zoomTransform(svg.node()), vb = svg.attr("viewBox").split(" ").map(Number);
+      const x0 = -t.x / t.k, y0 = -t.y / t.k, x1 = (vb[2] - t.x) / t.k, y1 = (vb[3] - t.y) / t.k;
+      // the councils in view, nearest the middle first (at most 40, so the map stays quick)
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      const dist = (b) => Math.hypot(Math.max(b[0][0] - cx, 0, cx - b[1][0]), Math.max(b[0][1] - cy, 0, cy - b[1][1]));
+      geoBounds.filter(([, b]) => b[1][0] > x0 && b[0][0] < x1 && b[1][1] > y0 && b[0][1] < y1)
+        .sort((p, q) => dist(p[1]) - dist(q[1])).slice(0, 40).forEach(([id]) => want.add(id));
+    }
+    return [...want];
+  }
+  let nbTimer = 0;
+  function nbUpdate() {
+    clearTimeout(nbTimer);
+    nbTimer = setTimeout(() => {
+      const want = nbWanted();
+      if (!want.length) { NBH.drawn = []; nbDraw(); return; }
+      Promise.all(want.map(nbLoad)).then((tiles) => { NBH.drawn = tiles.filter(Boolean); nbDraw(); });
+    }, 60);
+  }
+  // colours: deciles from dark (most deprived) to light; other measures in five equal groups of the neighbourhoods shown
+  function nbScale() {
+    const key = NBH.shade;
+    if (NB_DECILE[key]) return { key, kind: "decile", col: (v) => (v == null ? null : d3.interpolateYlOrBr(0.95 - (v - 1) * 0.095)) };
+    const vals = NBH.drawn.flatMap((t) => t.fs.map((f) => f.properties[key])).filter((v) => v != null).sort(d3.ascending);
+    if (!vals.length) return { key, kind: "none", col: () => null, breaks: [] };
+    const breaks = [0.2, 0.4, 0.6, 0.8].map((q) => d3.quantileSorted(vals, q));
+    const ramp = [0.15, 0.35, 0.55, 0.75, 0.95].map((x) => d3.interpolateYlOrBr(x));
+    return { key, kind: "quint", breaks, ramp, lo: vals[0], hi: vals[vals.length - 1], col: (v) => (v == null ? null : ramp[d3.bisectRight(breaks, v)]) };
+  }
+  const nbLabel = (key) => NB_DECILE[key] || NB_OTHER[key]?.[0] || F[key]?.label || key;
+  const nbFmt = (key, v) => (v == null ? "no data" : NB_DECILE[key] ? `decile ${v}` : key === "ma" ? `${v}` : F[key] ? fmtShort(F[key], v) : `${v}%`);
+  function nbDraw() {
+    const fs = NBH.drawn.flatMap((t) => t.fs);
+    const sc = nbScale();
+    gNb.selectAll("path").data(fs, (d) => d.properties.c).join("path")
+      .attr("class", (d) => "nb" + (d.properties.c === state.nb ? " on" : ""))
+      .attr("data-nb", (d) => d.properties.c)
+      .attr("d", path)
+      .style("fill", (d) => sc.col(d.properties[sc.key]));
+    gNb.selectAll("path.on").raise();
+    gNbLine.selectAll("path").data(NBH.drawn, (t) => t.la).join("path").attr("class", "nbline").attr("d", (t) => path(t.outline));
+    nbCtl.hidden = !fs.length;
+    if (fs.length) nbControl(sc);
+  }
+  function nbControl(sc) {
+    const cen = (NBH.meta?.census || []).filter((k2) => F[k2]);
+    const opts = `<optgroup label="Deprivation (1 = most deprived 10%)">${Object.entries(NB_DECILE).map(([k2, l]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</optgroup>
+      <optgroup label="People">${Object.entries(NB_OTHER).map(([k2, [l]]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</optgroup>
+      <optgroup label="Census">${cen.map((k2) => `<option value="${k2}">${esc(F[k2].label)}</option>`).join("")}</optgroup>`;
+    const legend = sc.kind === "decile"
+      ? `<div class="nbkey"><span>Most deprived</span>${d3.range(1, 11).map((v) => `<i style="background:${sc.col(v)}" title="Decile ${v}"></i>`).join("")}<span>Least</span></div>`
+      : sc.kind === "quint" ? `<div class="nbkey">${sc.ramp.map((c, i) => `<i style="background:${c}" title="${i === 0 ? `up to ${nbFmt(sc.key, sc.breaks[0])}` : i === 4 ? `${nbFmt(sc.key, sc.breaks[3])} and over` : `${nbFmt(sc.key, sc.breaks[i - 1])} to ${nbFmt(sc.key, sc.breaks[i])}`}"></i>`).join("")}</div>
+        <p class="nbnote">${esc(nbFmt(sc.key, sc.lo))} to ${esc(nbFmt(sc.key, sc.hi))}: five equal groups of the neighbourhoods shown</p>` : "";
+    nbCtl.innerHTML = `<label class="nbsel"><span>Neighbourhoods</span><select id="nbShade" aria-label="Shade neighbourhoods by">${opts}</select></label>${legend}`;
+    const s = nbCtl.querySelector("select");
+    s.value = NBH.shade;
+    s.onchange = () => { NBH.shade = s.value; nbDraw(); if (state.nb) renderNb(); };
+  }
+  function nbTip(evt, code) {
+    const p = NBH.rows.get(code);
+    if (!p) return;
+    const la = byIso.get(p.la);
+    const key = NBH.shade;
+    tip.innerHTML = `<strong>${esc(p.n)}</strong><br><span class="tsub">${esc(NBH.meta?.names?.[code[0]] || "Neighbourhood")} in ${esc(la?.name || "")}</span><br>
+      ${esc(nbLabel(key))}: <b>${esc(nbFmt(key, p[key]))}</b>${key !== "d" && p.d ? `<br>Deprivation: decile ${p.d}` : ""}${p.p ? `<br>${d3.format(",")(p.p)} people` : ""}`;
+    tip.hidden = false;
+    placeTip(evt);
+  }
+  function selectNb(code, zoomIt) {
+    const p = NBH.rows.get(code);
+    if (!p) return;
+    state.selected = p.la; state.nb = code; state.open = null;
+    if (state.view !== "map") state.view = "map";
+    render();
+    if (zoomIt) {
+      const f = NBH.tiles.get(p.la)?.fs.find((x) => x.properties.c === code);
+      if (f) zoomTo(path.bounds(f), 0.25);
+    }
+  }
+  // save a table as a CSV file (opens in Excel), with a line saying where the figures come from
+  function saveCSV(name, rows) {
+    const q = (v) => (v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\ufeff" + rows.map((r) => r.map(q).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
+    a.download = name.replace(/[^\w\- ]+/g, "").replace(/\s+/g, "-").toLowerCase() + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  function councilNbCSV(la) {
+    nbLoad(la).then((t) => {
+      if (!t) return;
+      const r = byIso.get(la), cen = (NBH.meta?.census || []).filter((k2) => F[k2]);
+      const head = ["Code", "Name", "Council", "People", "% aged 0 to 15", "% aged 65+", "Median age", "Deprivation decile (1 = most deprived)", "Deprivation rank", "Income decile", "Employment decile", "Health decile", "Education decile", ...cen.map((k2) => F[k2].label + " (%)")];
+      const rows = t.fs.map((f) => { const p = f.properties; return [p.c, p.n, r.name, p.p, p.a0, p.a65, p.ma, p.d, p.dr, p.di, p.de, p.dh, p.dd, ...cen.map((k2) => p[k2])]; });
+      rows.sort((a, b) => (a[8] ?? 1e9) - (b[8] ?? 1e9));
+      saveCSV(`${r.name} neighbourhoods`, [head, ...rows, [], [`Sources: ${NBH.meta?.index?.[la[0]] || "deprivation index"}; ONS/NRS small area population estimates; Census 2021 (Scotland 2022). Open Government Licence v3.0. From Which Places?, ${location.href.split("#")[0]}`]]);
+    });
+  }
+  function groupCSV(id) {
+    const g = GROUPS.get(id);
+    if (!g) return;
+    const uk = GROUPS.get("uk"), nat = g.kind !== "nation" && g.nation ? GROUPS.get("n:" + g.nation) : null;
+    const rows = [["Measure", "Period", g.name, nat ? nat.name : "", "UK", "How the figure for " + g.name + " was made", "Source"]];
+    FILTERS.filter((f) => f.type === "range" && g.v[f.key] != null).forEach((f) => {
+      const how = g.est?.includes(f.key) ? "estimate from its councils" : (f.key.startsWith("c_") || ["population", "area_km2", "density", "pct_0_15", "pct_16_64", "pct_65plus", "pop_change_10y", "pop_growth"].includes(f.key)) ? "added up from its councils" : "official";
+      rows.push([f.label, f.yearText || "", g.v[f.key], nat?.v[f.key] ?? "", f.compare === "nation" ? "" : uk?.v[f.key] ?? "", how, window.SOURCES[f.source]?.name || ""]);
+    });
+    rows.push([], [`From Which Places?, ${location.href.split("#")[0]}. Each figure keeps the licence of its source (all Open Government Licence v3.0).`]);
+    saveCSV(`${g.name} figures`, rows);
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-csv]");
+    if (!b) return;
+    const [kind, id] = b.dataset.csv.split("|");
+    if (kind === "g") groupCSV(id); else if (kind === "nb") councilNbCSV(id);
+  });
+  // the neighbourhood's own page in the panel
+  function renderNb() {
+    const p = NBH.rows.get(state.nb), r = p && byIso.get(p.la), el = $("#results");
+    if (!p || !r) { state.nb = null; return render(); }
+    const ni = p.c[0], meta = NBH.meta || {};
+    const noun = meta.names?.[ni] || "neighbourhood";
+    const gN = GROUPS.get("n:" + r.nation), gU = GROUPS.get("uk");
+    const rank = meta.ranked?.[ni];
+    const decTxt = (v) => (v === 1 ? `among the 10% most deprived in ${r.nation}` : v === 10 ? `among the 10% least deprived in ${r.nation}` : `in the ${["", "", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth"][v]} tenth of ${r.nation}'s neighbourhoods, counting from the most deprived`);
+    const bar = (v) => `<span class="dbar">${d3.range(1, 11).map((i) => `<i class="${i === v ? "on" : ""}" style="${i === v ? `background:${d3.interpolateYlOrBr(0.95 - (i - 1) * 0.095)}` : ""}"></i>`).join("")}</span>`;
+    const dep = p.d ? `<div class="nbdep"><div class="nbdep-main"><div class="dk">Deprivation</div><div class="dv num">Decile ${p.d}</div>${bar(p.d)}
+        <p>${esc(decTxt(p.d))}${p.dr && rank ? ` (ranked ${d3.format(",")(p.dr)} of ${d3.format(",")(rank)}; 1 is the most deprived).` : "."}</p></div>
+        <dl class="nbdoms">${Object.entries(NB_DECILE).filter(([k2]) => k2 !== "d" && p[k2]).map(([k2, l]) => `<dt>${esc(l.replace(" deprivation", ""))}</dt><dd>${bar(p[k2])}<span class="num">${p[k2]}</span></dd>`).join("")}</dl>
+        <p class="snote">From the ${esc(meta.index?.[ni] || "deprivation index")}. Deciles compare neighbourhoods within ${esc(r.nation)} only.${ni === "S" ? " Scotland's index uses the 2011 data zones; each 2022 data zone takes the figures of the 2011 one most of its postcodes were in." : ni === "N" ? " Northern Ireland's index (2017) uses the older Super Output Areas; each data zone takes the figures of the one most of its postcodes were in." : ""}</p></div>` : "";
+    const cmp = (key, v, fmtF) => `<td class="num"><b>${esc(fmtF(v))}</b></td><td class="num">${esc(fmtF(r[key]))}</td><td class="num">${esc(gN?.v[key] != null ? fmtF(gN.v[key]) : "–")}</td><td class="num">${esc(gU?.v[key] != null ? fmtF(gU.v[key]) : "–")}</td>`;
+    const people = p.p != null ? [["Population", null, d3.format(",")(p.p)], ["pct_0_15", "a0"], ["pct_65plus", "a65"]] : [];
+    const peopleRows = p.p != null ? `<tr><td>People (mid-${meta.popYear?.[ni] || ""})</td><td class="num"><b>${d3.format(",")(p.p)}</b></td><td class="num">${d3.format(",")(r.population)}</td><td></td><td></td></tr>`
+      + [["pct_0_15", "a0"], ["pct_65plus", "a65"], ["median_age", "ma"]].filter(([, k2]) => p[k2] != null).map(([key, k2]) => `<tr><td>${esc(F[key].label)}</td>${cmp(key, p[k2], (v) => (v == null ? "–" : fmtShort(F[key], v)))}</tr>`).join("") : "";
+    const groupsOf = {};
+    (meta.census || []).filter((key) => p[key] != null && F[key]).forEach((key) => (groupsOf[F[key].group] = groupsOf[F[key].group] || []).push(key));
+    const censusRows = Object.entries(groupsOf).map(([g, ks]) => `<tr class="gth"><th colspan="5">${esc(g.replace("Census: ", ""))}</th></tr>` +
+      ks.map((key) => `<tr><td><button type="button" class="linkbtn nbsh" data-k="${key}" title="Shade the map's neighbourhoods by this">${esc(F[key].label)}</button></td>${cmp(key, p[key], (v) => (v == null ? "–" : fmtShort(F[key], v)))}</tr>`).join("")).join("");
+    el.innerHTML = `<div class="detail nbpage">
+      <h2>${esc(p.n)}</h2>
+      <p class="sub">${esc(noun === "LSOA" ? "Neighbourhood (LSOA)" : noun === "data zone" ? "Neighbourhood (data zone)" : "Neighbourhood")} in ${esc(r.name)} · ${esc(r.nation)}${p.p ? ` · ${d3.format(",")(p.p)} people` : ""} <span class="code">${esc(p.c)}</span></p>
+      ${dep}
+      <table class="gtable nbtable"><thead><tr><th></th><th class="num">This neighbourhood</th><th class="num">${esc(r.name)}</th><th class="num">${esc(r.nation)}</th><th class="num">UK</th></tr></thead>
+        <tbody>${peopleRows}${censusRows ? `<tr class="gth"><th colspan="5">Census ${ni === "S" ? "2022" : "2021"}</th></tr>` + censusRows.replace(/<tr class="gth">/g, '<tr class="gth sub">') : ""}</tbody></table>
+      ${ni === "N" ? `<p class="snote">Northern Ireland's population estimates and census tables for data zones are not in this release yet; its council figures are on ${esc(r.name)}'s page.</p>` : ""}
+      ${ni === "E" || ni === "W" ? `<p class="snote">Some census topics (country of birth, veterans, sexual orientation) are not published for neighbourhoods in England and Wales.</p>` : ""}
+      <p class="snote">Council, nation and UK columns are figures for the whole place. Population estimates for small areas are approximate; ONS asks that they are rounded to the nearest 100 when quoted.</p>
+      <div class="nbnav"><button type="button" class="achip go" id="nbBack">← ${esc(r.name)}</button></div>
+    </div>`;
+    $("#nbBack").onclick = () => { state.nb = null; render(); };
+    el.querySelectorAll(".nbsh").forEach((b) => (b.onclick = () => { NBH.shade = b.dataset.k; nbDraw(); }));
+  }
+  // on a council's page: how its neighbourhoods compare
+  function nbFillSummary(el, la) {
+    const box = el.querySelector("#nbSum");
+    if (!box) return;
+    nbLoad(la).then((t) => {
+      if (!t || !box.isConnected) return;
+      const ni = la[0], r = byIso.get(la), noun = NBH.meta?.names?.[ni] || "neighbourhood";
+      const ps = t.fs.map((f) => f.properties);
+      const counts = d3.range(1, 11).map((v) => ps.filter((p) => p.d === v).length);
+      const max = d3.max(counts) || 1, n = ps.length, low = counts[0], low2 = counts[0] + counts[1];
+      const worst = ps.filter((p) => p.dr).sort((a, b) => a.dr - b.dr).slice(0, 5);
+      box.innerHTML = `<h4>Neighbourhoods</h4>
+        <p class="nbsumt"><b>${n}</b> ${esc(noun === "LSOA" ? "LSOAs" : noun + "s")}. <b>${low}</b> (${Math.round((100 * low) / n)}%) are among the 10% most deprived in ${esc(r.nation)}, and ${low2} (${Math.round((100 * low2) / n)}%) among the most deprived 20%.</p>
+        <div class="nbhist" role="img" aria-label="Neighbourhoods by deprivation decile">${counts.map((c, i) => `<span title="Decile ${i + 1}: ${c}"><i style="height:${Math.round((100 * c) / max)}%;background:${d3.interpolateYlOrBr(0.95 - i * 0.095)}"></i><em>${i + 1}</em></span>`).join("")}</div>
+        <p class="snote">Deprivation decile, 1 = the most deprived 10% in ${esc(r.nation)}.</p>
+        ${worst.length ? `<p class="snote">Most deprived:</p><div class="achips">${worst.map((p) => `<button type="button" class="achip" data-nb="${p.c}">${esc(p.n)}</button>`).join("")}</div>` : ""}
+        <p class="snote">Click a neighbourhood on the map for its figures.</p>
+        <button type="button" class="linkbtn" data-csv="nb|${la}">⬇ Every neighbourhood in ${esc(r.name)} (CSV)</button>`;
+      box.querySelectorAll("[data-nb]").forEach((b) => (b.onclick = () => selectNb(b.dataset.nb, true)));
+    });
+  }
+  // a postcode: find its neighbourhood (pc/<district>.json, from the ONS Postcode Directory)
+  const PC_RE = /^([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})$/i;
+  function findPostcode(raw) {
+    const m = raw.trim().toUpperCase().match(PC_RE);
+    if (!m) return Promise.resolve(null);
+    return fetch(`pc/${m[1]}.json?v=${DATA_VERSION}`).then((x) => (x.ok ? x.json() : null)).then((d) => {
+      const i = d?.u?.[m[2]];
+      return i == null ? null : { code: d.c[i][0], la: d.c[i][1] };
+    }).catch(() => null);
+  }
+  function goPostcode(raw) {
+    return findPostcode(raw).then((hit) => {
+      if (!hit) { const s = $("#sentence"); if (s) s.innerHTML = `Postcode <b>${esc(raw.toUpperCase())}</b> was not found. Check it, or try a nearby one.`; return false; }
+      return nbLoad(hit.la).then(() => { selectNb(hit.code, true); return true; });
+    });
+  }
+
   // ---------- Go to a nation or region ----------
   (function goTo() {
     const bar = $(".bar");
@@ -763,7 +1001,7 @@
     const nations = window.NATIONS || [], regions = (window.REGIONS || []).filter((r) => !nations.includes(r));
     const lab = document.createElement("label");
     lab.className = "goto"; lab.title = "Zoom the map to a nation or region";
-    lab.innerHTML = `<span>Go to</span><select id="goTo"><option value="">Zoom to a nation or region…</option><optgroup label="Nations">${nations.map((n) => `<option value="n:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup><optgroup label="Regions of England">${regions.map((n) => `<option value="r:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup></select>`;
+    lab.innerHTML = `<span>Go to</span><select id="goTo"><option value="">Go to a nation, region or city region…</option><optgroup label="Nations">${nations.map((n) => `<option value="n:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup><optgroup label="Regions of England">${regions.map((n) => `<option value="r:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>${(F.city?.order || []).length ? `<optgroup label="City regions">${F.city.order.map((n) => `<option value="c:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>` : ""}</select>`;
     bar.appendChild(lab);
     const sel = lab.querySelector("select");
     sel.onchange = () => {
@@ -771,8 +1009,9 @@
       if (state.view !== "map") { state.view = "map"; render(); }
       if (!v) { svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity); return; }
       const [kind, name] = [v[0], v.slice(2)];
-      const fs = geo.filter((d) => d.rec && (kind === "n" ? d.rec.nation === name : d.rec.region === name) && !insetFor(d.id));
-      if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.9);
+      // show the group's own page (its figures and its councils) and zoom the map to it
+      showGroup(kind === "n" ? "nation" : kind === "c" ? "city" : "region", name);
+      sel.value = "";
     };
   })();
 
@@ -1060,7 +1299,9 @@
     if (state.view !== "map") window.WV?.render();
     window.WMS?.refresh(); window.WST?.refresh(); window.WX?.refresh(); window.WCL?.draw(); window.WCG?.refresh(); window.WRG?.refresh();
     const chartList = state.view !== "map" && window.WV_H?.V?.list;
-    if (state.selected) renderDetail(); else if (chartList) renderChartList(); else renderResults(matches, act, res);
+    if (!state.selected) state.nb = null;
+    if (state.nb && NBH.rows.has(state.nb)) renderNb(); else if (state.selected) renderDetail(); else if (chartList) renderChartList(); else renderResults(matches, act, res);
+    nbUpdate();
     document.body.classList.toggle("pane-hidden", state.view !== "map" && !!state.paneHidden);
     saveURL();
     trackHistory();
@@ -1855,11 +2096,11 @@
     zoomTo(path.bounds(target), 0.38);
   }
   function zoomToGroup(kind, name) {
-    const fs = geo.filter((d) => d.rec && (kind === "nation" ? d.rec.nation === name : d.rec.region === name) && !insetFor(d.id));
+    const fs = geo.filter((d) => d.rec && (kind === "nation" ? d.rec.nation === name : kind === "city" ? d.rec.city === name : d.rec.region === name) && !insetFor(d.id));
     if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.9);
   }
   function selectArea(iso, zoomIt = true) {
-    state.selected = iso; state.open = null;
+    state.selected = iso; state.open = null; state.nb = null;
     if (state.view !== "map" && !desk()) state.view = "map";
     render();
     if (zoomIt) zoomToCountry(iso);
@@ -2132,7 +2373,7 @@
       <div class="rtop"><span class="n num">${matches.length}</span><span class="of">${act.length ? `of ${total} areas match` : `areas`}</span>
         <label class="shadeby">Shade the map by <select id="colSel" aria-label="Shade the map by" data-pick><option value="">Automatic</option><option value="none" ${state.colourBy === "none" ? "selected" : ""}>Single colour</option>${groupedOptions(state.colourBy)}</select></label></div>
       ${combo ? `<p class="note">Combined score: each area's average position across ${esc(rangeAct.map((f) => f.short || f.label).join(", "))}, from 0 to 100.</p>` : ""}
-      <div class="tablewrap2"><table class="rtable"><thead><tr><th class="rk">#</th>${th("__name", "Area")}${combo ? th("__combo", "Combined", true) : ""}${cols.map((f) => th(f.key, f.short || f.label, true)).join("")}</tr></thead>
+      <div class="tablewrap2">${groupSummaryHTML(act)}<table class="rtable"><thead><tr><th class="rk">#</th>${th("__name", "Area")}${combo ? th("__combo", "Combined", true) : ""}${cols.map((f) => th(f.key, f.short || f.label, true)).join("")}</tr></thead>
       <tbody>${list.map((r, i) => `<tr class="trow${r.iso3 === state.selected ? " sel" : ""}" data-iso="${r.iso3}" tabindex="0"><td class="rk num">${i + 1}</td>
         <td class="nm"><span class="an">${esc(r.name)}</span><span class="ar">${esc(r.region === r.nation ? r.nation : r.region)}</span></td>
         ${combo ? `<td class="num">${combo.get(r.iso3) ?? "–"}</td>` : ""}
@@ -2159,7 +2400,7 @@
 
   // ---------- One area: how it compares, and ways to move on ----------
   // the period a figure is for: "2024/25", "2022–24"; measures whose year differs by nation show each area's own year
-  const yearOf = (f, r) => (f.yearText && !/^\d{4}–\d{4}$/.test(f.yearText) ? f.yearText : typeof f.year === "string" && r[f.year] ? String(r[f.year]) : null);
+  const yearOf = (f, r) => (f.yearText && !f.areaYear && !/^\d{4}–\d{4}$/.test(f.yearText) ? f.yearText : typeof f.year === "string" && r[f.year] ? String(r[f.year]) : null);
   const HEADLINE = () => (window.HEADLINE || ["population", "median_age", "pct_0_15", "pct_65plus", "pop_change_10y", "density"]).filter((k) => F[k]);
   function similarAreas(r, n = 6) {
     const ks = HEADLINE(), all = rows.filter((x) => x.sovereign);
@@ -2195,8 +2436,43 @@
       <div class="anav">
         <div class="abox"><h4>Neighbouring areas</h4><div class="achips">${nbs.length ? nbs.map(chip).join("") : `<span class="snote">None: it has no land border with another area.</span>`}</div></div>
         <div class="abox"><h4>Similar areas</h4><div class="achips">${sim.map(chip).join("")}</div><p class="snote">Closest on ${esc(HEADLINE().map((k) => (F[k].short || F[k].label).toLowerCase()).join(", "))}.</p></div>
-        <div class="abox"><h4>Show all the areas in</h4><div class="achips">${r.region !== r.nation ? `<button type="button" class="achip go" data-k="region" data-v="${esc(r.region)}">${esc(r.region)}</button>` : ""}<button type="button" class="achip go" data-k="nation" data-v="${esc(r.nation)}">${esc(r.nation)}</button></div></div>
+        <div class="abox nbbox" id="nbSum"><h4>Neighbourhoods</h4><p class="snote">Loading…</p></div>
+        <div class="abox"><h4>Show all the areas in</h4><div class="achips">${r.region !== r.nation ? `<button type="button" class="achip go" data-k="region" data-v="${esc(r.region)}">${esc(r.region)}</button>` : ""}<button type="button" class="achip go" data-k="nation" data-v="${esc(r.nation)}">${esc(r.nation)}</button>${r.city ? `<button type="button" class="achip go" data-k="city" data-v="${esc(r.city)}">${esc(r.city)}</button>` : ""}</div></div>
       </div></div>`;
+  }
+  // When the only filter is one nation, region or city region, the list starts with that place's own figures,
+  // for the whole place (not the typical council), compared with its nation and the UK.
+  function groupSummaryHTML(act) {
+    if (act.length !== 1 || !["nation", "region", "city"].includes(act[0].key) || (act[0].values || []).length !== 1 || !GROUPS.size) return "";
+    const g = GROUPS.get(groupId(act[0].key, act[0].values[0]));
+    if (!g) return "";
+    const uk = GROUPS.get("uk"), nat = g.kind !== "nation" && g.nation ? GROUPS.get("n:" + g.nation) : null;
+    const est = new Set(g.est || []);
+    const val = (grp, k) => (grp && grp.v[k] != null ? `${grp.est?.includes(k) ? "≈" : ""}${fmtShort(F[k], grp.v[k])}` : "–");
+    const kind = { nation: "Nation", region: "Region of England", city: "City region", uk: "" }[g.kind];
+    const cards = HEADLINE().filter((k) => g.v[k] != null).map((k) => {
+      const f = F[k], own = f.compare === "nation";
+      return `<div class="scard"><div class="sk">${esc(f.short || f.label)}</div><div class="sv num">${est.has(k) ? `<span class="approx" title="Worked out from its councils">≈</span>` : ""}${esc(fmtShort(f, g.v[k]))}</div>
+        <div class="sc">${nat ? `${esc(nat.name)} <b>${esc(val(nat, k))}</b>` : ""}${nat && !own ? " · " : ""}${!own && g.kind !== "uk" ? `UK <b>${esc(val(uk, k))}</b>` : ""}</div></div>`;
+    }).join("");
+    // every measure, by theme
+    const themes = (window.THEMES || []).map((t) => {
+      const ks = FILTERS.filter((f) => f.type === "range" && t.groups.includes(f.group) && g.v[f.key] != null).map((f) => f.key);
+      if (!ks.length) return "";
+      return `<tr class="gth"><th colspan="4">${esc(t.label)}</th></tr>` + ks.map((k) => {
+        const f = F[k], own = f.compare === "nation";
+        return `<tr><td>${esc(f.label)}${f.yearText ? ` <span class="yr">${esc(f.yearText)}</span>` : ""}</td><td class="num"><b>${esc(val(g, k))}</b></td><td class="num">${nat ? esc(val(nat, k)) : ""}</td><td class="num">${own || g.kind === "uk" ? "" : esc(val(uk, k))}</td></tr>`;
+      }).join("");
+    }).join("");
+    return `<section class="gsum" aria-label="Figures for ${esc(g.name)}">
+      <div class="gs-head"><div><h2>${esc(g.name)}</h2><p>${kind ? `${esc(kind)} · ` : ""}${g.members.length} council${g.members.length === 1 ? "" : "s"} · ${d3.format(",")(g.v.population)} people (mid-2025)</p></div></div>
+      <div class="scards">${cards}</div>
+      <details class="gs-all"><summary>Every measure for ${esc(g.name)}${nat ? `, ${esc(nat.name)}` : ""} and the UK</summary>
+        <table class="gtable"><thead><tr><th>Measure</th><th class="num">${esc(g.name)}</th><th class="num">${nat ? esc(nat.name) : ""}</th><th class="num">UK</th></tr></thead><tbody>${themes}</tbody></table></details>
+      <p class="snote">Figures for the whole ${g.kind === "city" ? "city region" : g.kind}, not the typical council. Official figures where ONS publishes them; ≈ marks figures worked out from its councils (an average weighted by the people each measure is about), and census figures are added up from the counts. Deprivation, new homes and apprenticeships are compared within a nation only.</p>
+      <p><button type="button" class="linkbtn" data-csv="g|${esc(g.id)}">⬇ Download these figures (CSV, opens in Excel)</button></p>
+      <h3 class="gs-list">Its councils</h3>
+    </section>`;
   }
   function showGroup(k, v) {
     state.filters = state.filters.filter((x) => x.key !== k);
@@ -2206,6 +2482,7 @@
     zoomToGroup(k, v);
   }
   function bindAreaNav(el) {
+    if (state.selected) nbFillSummary(el, state.selected);
     el.querySelectorAll(".achip[data-iso]").forEach((b) => {
       b.onclick = () => selectArea(b.dataset.iso);
       b.onmouseenter = () => highlight(b.dataset.iso, true);
@@ -2225,12 +2502,15 @@
     const i = order.indexOf(r.iso3), prev = byIso.get(order[i - 1]), next = byIso.get(order[i + 1]);
     const steps = [`<button type="button" data-go="uk">United Kingdom</button>`, `<button type="button" data-go="nation" data-v="${esc(r.nation)}">${esc(r.nation)}</button>`];
     if (r.region !== r.nation) steps.push(`<button type="button" data-go="region" data-v="${esc(r.region)}">${esc(r.region)}</button>`);
-    steps.push(`<b>${esc(r.name)}</b>`);
+    const nbp = state.nb && NBH.rows.get(state.nb);
+    if (nbp) steps.push(`<button type="button" data-go="area">${esc(r.name)}</button>`, `<b>${esc(nbp.n)}</b>`);
+    else steps.push(`<b>${esc(r.name)}</b>`);
     trail.innerHTML = `<nav class="trail" aria-label="Where this area is">${steps.join(`<span class="sep" aria-hidden="true">›</span>`)}</nav>
       <span class="pn"><button type="button" class="tolist" data-go="list" title="Back to the list">☰ List</button>${prev ? `<button type="button" data-iso="${prev.iso3}" title="Previous in the list">‹ ${esc(prev.name)}</button>` : ""}<span class="pos">${i + 1} of ${order.length}</span>${next ? `<button type="button" data-iso="${next.iso3}" title="Next in the list">${esc(next.name)} ›</button>` : ""}</span>`;
     trail.querySelectorAll("button[data-iso]").forEach((b) => (b.onclick = () => selectArea(b.dataset.iso)));
     trail.querySelectorAll("button[data-go]").forEach((b) => (b.onclick = () => {
       const g = b.dataset.go;
+      if (g === "area") { state.nb = null; render(); return; }
       state.selected = null; render();
       if (g === "uk") svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
       else if (g !== "list") zoomToGroup(g, b.dataset.v);
@@ -2535,15 +2815,19 @@
     if (cid) { paths.classed("hover", false); return showCityTip(evt, cities[+cid]); }
     const bref = t.getAttribute && t.getAttribute("data-base");
     if (bref) { paths.classed("hover", false); tip.innerHTML = `<strong>${esc(bref)}</strong>`; return placeTip(evt); }
+    const nbc = t.getAttribute && t.getAttribute("data-nb");
+    if (nbc) { paths.classed("hover", false); gNb.selectAll("path.hover").classed("hover", false); d3.select(t).classed("hover", true); return nbTip(evt, nbc); }
     const iso = t.getAttribute && t.getAttribute("data-iso");
     paths.classed("hover", false);
     if (iso) d3.select(t).filter("path").classed("hover", true).raise();
     showTip(evt, iso ? byIso.get(iso) : null);
-  }).on("pointerleave", () => { tip.hidden = true; paths.classed("hover", false); });
+  }).on("pointerleave", () => { tip.hidden = true; paths.classed("hover", false); gNb.selectAll("path.hover").classed("hover", false); });
   svg.on("click", (evt) => {
     const t = evt.target;
     const fref = (t.getAttribute && t.getAttribute("data-feat")) || (state.mode === "physical" && window.WP?.hit(evt));
     if (fref) { const [ft, fi] = fref.split(":"); state.feat = { t: ft, i: +fi }; state.selected = null; state.tab = "feat:" + ft; return render(); }
+    const nbc = t.getAttribute && t.getAttribute("data-nb");
+    if (nbc) return selectNb(nbc);
     const cid = t.getAttribute && t.getAttribute("data-city");
     const iso = cid ? cities[+cid].iso3 : t.getAttribute && t.getAttribute("data-iso");
     if (iso && byIso.get(iso) && window.WQ?.mapClick?.(iso)) return;
@@ -2628,9 +2912,14 @@
     let html = "";
     // a question in plain English: show how it was understood, first in the list
     const raw = input.value.trim();
-    if (window.WA && (raw.split(/\s+/).length >= 3 || /\d/.test(raw) || /^(how|which|what|show|compare|list|find|where|who)\b/i.test(raw))) {
+    if (window.WA && !PC_RE.test(raw) && (raw.split(/\s+/).length >= 3 || /\d/.test(raw) || /^(how|which|what|show|compare|list|find|where|who)\b/i.test(raw))) {
       const a = window.WA.previewHTML(raw);
       if (a.html) { items.push({ ask: a.p }); html += `<div role="option" class="item askitem" tabindex="-1" data-i="${items.length - 1}">${a.html}</div>`; }
+    }
+    // a postcode
+    if (PC_RE.test(raw)) {
+      items.push({ postcode: raw });
+      html += `<h4 class="rh">Postcode</h4><button type="button" role="option" class="item" data-i="${items.length - 1}"><span>Find <b>${esc(raw.toUpperCase())}</b> on the map</span><span class="gtag">neighbourhood</span></button>`;
     }
     // places whose name matches, best matches first
     if (q.length >= 2) {
@@ -2763,9 +3052,10 @@
     const hb = host.getBoundingClientRect(), bb = btn.getBoundingClientRect(), pb = cp.getBoundingClientRect();
     const addB = $("#addFilter");
     if (desk() && addB) {
-      const ab = addB.getBoundingClientRect(), left = Math.max(8, ab.left - hb.left);
+      // open under "Add a filter", lined up with the panel's left edge and never wider than the panel
+      const pr = ($("#panel") || addB).getBoundingClientRect(), ab = addB.getBoundingClientRect(), left = Math.max(8, pr.left - hb.left + 16);
       panel.style.left = left + "px"; panel.style.top = (ab.bottom - hb.top + 8) + "px";
-      panel.style.maxWidth = (hb.width - left - 16) + "px";
+      panel.style.maxWidth = (pr.right - pr.left - 32) + "px";
       return;
     }
     // the panel sits on the right of the page on the UK site, so the flyout opens to its left
@@ -2878,6 +3168,7 @@
   function choose(it) {
     if (!it) return;
     if (it.ask) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); window.WA.apply(it.ask); return; }
+    if (it.postcode) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); goPostcode(it.postcode); return; }
     // a place: show its profile and zoom to it
     if (it.place) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); state.selected = it.place; state.open = null; if (state.view !== "map") state.view = "map"; render(); zoomToCountry(it.place); return; }
     let fl = state.filters.find((x) => x.key === it.key);
@@ -3064,7 +3355,7 @@
       <div class="tablewrap"><table><thead><tr><th>Source</th><th>Used for</th><th>Licence</th></tr></thead><tbody>
       ${used.map((k) => { const s = window.SOURCES[k]; const fs = FILTERS.filter((f) => f.source === k).map((f) => f.label); return `<tr><td><a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a></td><td>${esc(fs.join(", ") || ({ gdl: "Regions within areas: the HDI, life expectancy, schooling, income and gender measures for 1,800 regions", gapmincm: "Income mountains (Charts)", unppp: "The shaded ranges on population projections" }[k] || "Area shapes"))}</td><td>${esc(s.licence)}</td></tr>`; }).join("")}
       </tbody></table></div>
-      <p>Areas are the 361 local authorities (lower tier) of the UK, on detailed May 2025 boundaries (ONS, BGC). Orkney and Shetland are drawn in a box in the North Sea, and London is drawn again, enlarged, in a box to the west. Deprivation, new homes and apprenticeships are measured differently in each nation, so compare them only within a nation. Regions are the 12 ITL1 regions: the nine English regions, Wales, Scotland and Northern Ireland. Contains OS data © Crown copyright and database right.</p>
+      <p>Areas are the 361 local authorities (lower tier) of the UK, on detailed May 2025 boundaries (ONS, BGC). Orkney and Shetland are drawn in a box in the North Sea, and London is drawn again, enlarged, in a box to the west. Deprivation, new homes and apprenticeships are measured differently in each nation, so compare them only within a nation. Census figures are from Census 2021 (England, Wales and Northern Ireland) and Scotland's Census 2022. City regions are England's combined authorities, Greater London and the city regions of Wales, Scotland and Northern Ireland; their figures are official where ONS publishes them, otherwise worked out from their councils (marked ≈). Neighbourhoods are LSOAs (England and Wales, 2021) and data zones (Scotland 2022, Northern Ireland 2021); Scotland's and Northern Ireland's deprivation indices use older small areas, matched to the new ones by postcode. Regions are the 12 ITL1 regions: the nine English regions, Wales, Scotland and Northern Ireland. Contains OS data © Crown copyright and database right.</p>
     </div>`;
     el.hidden = false;
     $("#aboutClose").onclick = () => (el.hidden = true);

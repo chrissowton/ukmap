@@ -494,7 +494,9 @@
     if (over > 0) ends.forEach((e) => (e.y -= over));
     svg.append("g").selectAll("text").data(ends).join("text").attr("x", w - M.r + 6).attr("y", (e) => e.y).attr("dy", "0.35em")
       .attr("font-size", 11).attr("font-weight", (e) => (e.s.bold ? 600 : 400)).attr("fill", ink).text((e) => clip(e.s.name, mob ? 12 : 22));
-    svg.append("g").selectAll("line").data(ends).join("line").attr("x1", (e) => e.x).attr("x2", w - M.r + 3).attr("y1", (e) => sy(e.v)).attr("y2", (e) => e.y).attr("stroke", (e) => e.s.colour).attr("stroke-width", 1).attr("opacity", 0.6);
+    // leader lines from each line's end to its label: thin, grey and dotted, so they can't be mistaken for the data
+    svg.append("g").selectAll("line").data(ends.filter((e) => Math.abs(sy(e.v) - e.y) > 2)).join("line").attr("x1", (e) => e.x + 2).attr("x2", w - M.r + 4).attr("y1", (e) => sy(e.v)).attr("y2", (e) => e.y)
+      .attr("stroke", H.css("--muted")).attr("stroke-width", 0.8).attr("stroke-dasharray", "1.5 2.5").attr("opacity", 0.55);
   }
   // a name or code at the end of each country's line
   function countryLabels(svg, list, ys, sx, sy, log, code) {

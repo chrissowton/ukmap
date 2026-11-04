@@ -1,0 +1,28 @@
+{
+  "_about": "City regions for Which Places? (release 1.2): England's combined authorities and the city regions of Wales, Scotland and Northern Ireland, as used by ONS Explore Local Statistics (November 2026). Each lists its member councils by name. 'els' is the name ONS uses for it, so its official figures can be found.",
+  "regions": [
+    {"name": "Greater London", "els": "Greater London Authority", "nation": "England", "members": ["@region:London"]},
+    {"name": "Greater Manchester", "nation": "England", "members": ["Bolton", "Bury", "Manchester", "Oldham", "Rochdale", "Salford", "Stockport", "Tameside", "Trafford", "Wigan"]},
+    {"name": "West Midlands (combined authority)", "els": "West Midlands", "nation": "England", "members": ["Birmingham", "Coventry", "Dudley", "Sandwell", "Solihull", "Walsall", "Wolverhampton"]},
+    {"name": "West Yorkshire", "nation": "England", "members": ["Bradford", "Calderdale", "Kirklees", "Leeds", "Wakefield"]},
+    {"name": "South Yorkshire", "nation": "England", "members": ["Barnsley", "Doncaster", "Rotherham", "Sheffield"]},
+    {"name": "Liverpool City Region", "nation": "England", "members": ["Halton", "Knowsley", "Liverpool", "St. Helens", "Sefton", "Wirral"]},
+    {"name": "North East (combined authority)", "els": "North East", "elsCode": "E47000014", "nation": "England", "members": ["County Durham", "Gateshead", "Newcastle upon Tyne", "North Tyneside", "Northumberland", "South Tyneside", "Sunderland"]},
+    {"name": "Tees Valley", "nation": "England", "members": ["Darlington", "Hartlepool", "Middlesbrough", "Redcar and Cleveland", "Stockton-on-Tees"]},
+    {"name": "West of England", "nation": "England", "members": ["Bath and North East Somerset", "Bristol, City of", "South Gloucestershire"]},
+    {"name": "Cambridgeshire and Peterborough", "nation": "England", "members": ["Cambridge", "East Cambridgeshire", "Fenland", "Huntingdonshire", "South Cambridgeshire", "Peterborough"]},
+    {"name": "East Midlands (combined county authority)", "els": "East Midlands", "elsCode": "E47000013", "nation": "England", "members": ["Derby", "Amber Valley", "Bolsover", "Chesterfield", "Derbyshire Dales", "Erewash", "High Peak", "North East Derbyshire", "South Derbyshire", "Nottingham", "Ashfield", "Bassetlaw", "Broxtowe", "Gedling", "Mansfield", "Newark and Sherwood", "Rushcliffe"]},
+    {"name": "York and North Yorkshire", "nation": "England", "members": ["York", "North Yorkshire"]},
+    {"name": "Hull and East Yorkshire", "nation": "England", "members": ["Kingston upon Hull, City of", "East Riding of Yorkshire"]},
+    {"name": "Greater Lincolnshire", "nation": "England", "members": ["Boston", "East Lindsey", "Lincoln", "North Kesteven", "South Holland", "South Kesteven", "West Lindsey", "North Lincolnshire", "North East Lincolnshire"]},
+    {"name": "Lancashire", "nation": "England", "members": ["Blackburn with Darwen", "Blackpool", "Burnley", "Chorley", "Fylde", "Hyndburn", "Lancaster", "Pendle", "Preston", "Ribble Valley", "Rossendale", "South Ribble", "West Lancashire", "Wyre"]},
+    {"name": "Devon and Torbay", "nation": "England", "members": ["East Devon", "Exeter", "Mid Devon", "North Devon", "South Hams", "Teignbridge", "Torridge", "West Devon", "Torbay"]},
+    {"name": "Cardiff Capital Region", "nation": "Wales", "members": ["Blaenau Gwent", "Bridgend", "Caerphilly", "Cardiff", "Merthyr Tydfil", "Monmouthshire", "Newport", "Rhondda Cynon Taf", "Torfaen", "Vale of Glamorgan"]},
+    {"name": "Swansea Bay City Region", "nation": "Wales", "members": ["Carmarthenshire", "Neath Port Talbot", "Pembrokeshire", "Swansea"]},
+    {"name": "North Wales", "els": "North Wales Economic Ambition Board", "nation": "Wales", "members": ["Isle of Anglesey", "Gwynedd", "Conwy", "Denbighshire", "Flintshire", "Wrexham"]},
+    {"name": "Glasgow City Region", "nation": "Scotland", "members": ["East Dunbartonshire", "East Renfrewshire", "Glasgow City", "Inverclyde", "North Lanarkshire", "Renfrewshire", "South Lanarkshire", "West Dunbartonshire"]},
+    {"name": "Edinburgh and South East Scotland City Region", "nation": "Scotland", "members": ["City of Edinburgh", "East Lothian", "Fife", "Midlothian", "Scottish Borders", "West Lothian"]},
+    {"name": "Aberdeen City Region", "nation": "Scotland", "members": ["Aberdeen City", "Aberdeenshire"]},
+    {"name": "Belfast City Region", "nation": "Northern Ireland", "members": ["Belfast", "Antrim and Newtownabbey", "Ards and North Down", "Lisburn and Castlereagh", "Mid and East Antrim", "Newry, Mourne and Down"]}
+  ]
+}

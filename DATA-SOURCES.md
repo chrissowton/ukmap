@@ -41,6 +41,52 @@ All four are under the Open Government Licence v3.0. **Each nation's index is bu
 
 Employment, economic inactivity and level 3 qualifications come from the Annual Population Survey in Great Britain and from NISRA in Northern Ireland; they use the same definitions and are shown together. New homes, apprenticeship starts and preventable heart and circulatory deaths are counted differently in each nation, so, like deprivation, they are compared only within a nation.
 
+## Release 1.2: census and city regions
+
+### Census (25 measures)
+
+Shares of people or households from the three censuses, worked out on this site from the published counts (`scripts/build_census.py`):
+
+| Census | Publisher | How we got it | Geography |
+| --- | --- | --- | --- |
+| Census 2021, England and Wales | ONS | the giCentre census21 repository (https://github.com/gicentre/data/tree/main/census21), which republishes ONS's tables as Parquet | local authorities (2021). The councils merged since (Cumberland, Westmorland and Furness, North Yorkshire, Somerset) are made by adding up the old ones |
+| Scotland's Census 2022 | National Records of Scotland | the 2022 data zone tables (download "Datazone2022" from scotlandscensus.gov.uk), added up to council areas with the lookup in NRS's small area population estimates | data zones (2022) to council areas |
+| Census 2021, Northern Ireland | NISRA | main statistics tables (census-2021-ms-*.xlsx), Local Government District sheets | local government districts |
+
+All three are under the Open Government Licence v3.0. Topics: ethnic group, born outside the UK, religion, English language, sexual orientation, armed forces veterans, general health, disability, unpaid care, cars, tenure, overcrowding, older people living alone, lone parents, household deprivation, qualifications, long-term sickness and retirement. Where a census did not ask a question, or asked it differently, that nation has no figure, and each measure's explanation says so (for example, English language skills in Scotland, sexual orientation in Scotland's data zone tables, veterans in Northern Ireland). Scotland's figures are for 2022, the others for 2021.
+
+### City regions and other groups of councils
+
+`groups.json` has figures for the UK, the four nations, the nine English regions and 23 city regions: England's combined authorities, Greater London, and the city regions of Wales, Scotland and Northern Ireland (members in `scripts/city_regions.json`). Built by `scripts/build_groups.py`. Each figure is either:
+
+1. **official**: published by ONS for that group (ONS Explore Local Statistics covers the UK, nations, regions and combined authorities for many measures);
+2. **added up**: totals, age shares and census shares, worked out exactly from the councils; or
+3. **an estimate (≈)**: the average of its councils, weighted by the people the measure is about (children for child poverty, people aged 16 to 64 for work measures, everyone for the rest). Medians (pay, house prices, median age) and deprivation shares can only be estimated this way. Groups whose councils with figures hold less than 80% of the relevant people get no figure.
+
+## Release 1.3: neighbourhoods
+
+46,844 small areas, built by `scripts/build_small.py`: 33,755 LSOAs in England and 1,917 in Wales (2021), 7,392 data zones in Scotland (2022) and 3,780 data zones in Northern Ireland (2021). Each council's are in `nb/<council code>.json`, loaded only when the council is opened or the map is zoomed in.
+
+| Data | Publisher | How we got it | Licence |
+| --- | --- | --- | --- |
+| LSOA (December 2021) boundaries, England and Wales, BGC | ONS Open Geography Portal | downloaded from the portal | Open Government Licence v3.0; contains OS data © Crown copyright and database right |
+| Data Zone 2022 boundaries | Scottish Government | spatialdata.gov.scot (shapefile) | Open Government Licence v3.0 |
+| Data Zone 2021 boundaries | NISRA | nisra.gov.uk (GeoJSON) | Open Government Licence v3.0 |
+| LSOA population by single year of age, mid-2024 | ONS | ONS (sapelsoasyoa20222024.xlsx) | Open Government Licence v3.0 |
+| Data zone population by single year of age, mid-2024 | National Records of Scotland | NRS small area population estimates | Open Government Licence v3.0 |
+| Small-area deprivation: English IoD 2025, WIMD 2025, SIMD 2020v2, NIMDM 2017 | MHCLG, Welsh Government, Scottish Government, NISRA | the IMD package (https://github.com/humaniverse/IMD) | Open Government Licence v3.0 |
+| ONS Postcode Directory (February 2025): postcode to small area | ONS | the geographr package (https://github.com/humaniverse/geographr) | Open Government Licence v3.0 (Northern Ireland postcodes: see the ONSPD licence notes on use of NI postcode data) |
+| Census by small area | as for release 1.2 | England and Wales from the giCentre census21 LSOA tables; Scotland from the 2022 data zone tables | Open Government Licence v3.0 |
+
+Notes:
+
+- **Scotland's deprivation index (SIMD 2020v2) and Northern Ireland's (NIMDM 2017) use older small areas** (2011 data zones; 2001 Super Output Areas). Each new small area takes the figures of the old one most of its postcodes fall in, using the ONS Postcode Directory. Deciles still compare areas within one nation only.
+- **Northern Ireland's small areas** have deprivation only in this release: NISRA's data zone population estimates and census tables are not among the files used.
+- **England and Wales** small areas have no figures for country of birth, armed forces veterans or sexual orientation, which ONS publishes only for larger areas.
+- Small-area population estimates are approximate; ONS asks that they are rounded to the nearest 100 when quoted.
+- Map files are simplified for the web with mapshaper (15%, weighted, shapes kept).
+- **Postcode finder:** `pc/<postcode district>.json` maps each postcode in the ONS Postcode Directory (including some no longer in use) to its small area and council.
+
 ## Notes
 
 - **Area** is measured from the boundary map, which is clipped to the coastline and simplified, so it is close to but not exactly the official area.
