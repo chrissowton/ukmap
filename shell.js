@@ -1,9 +1,10 @@
 /* Which Places? — the page layout on a laptop or bigger (release 1.0.2).
    The UK is tall and narrow, so:
-   - one slim bar along the top: name, search, the five views as tabs, and the tools (Statistics, Download, Share, More)
-   - the map on the left, as wide as the UK's shape needs, at full height, with its key and year in one small card
-   - a wide panel on the right: where you are (United Kingdom › nation › region › area), the filters as chips,
-     the sentence saying what is shown, then the results table, one area's profile, or a chart.
+   - the map on the left at the full height of the screen, as wide as the UK's shape needs (app.js works the width out),
+     with its key and year in one small card
+   - a panel on the right: the name, search and tools; the five views as tabs; where you are
+     (United Kingdom › nation › region › area); the filters as chips; the sentence saying what is shown;
+     then the results table, one area's profile, or a chart.
    Phones keep their own layout: below 761px wide nothing here applies, and anything moved is put back.
    The page's parts are moved, not copied, so everything in app.js and the other scripts keeps working. */
 (function () {
@@ -75,6 +76,8 @@
       const chips = $("#chips");
       new MutationObserver(() => { $("#clearF").hidden = !chips.children.length; }).observe(chips, { childList: true });
     }
+    // the title, search, view tabs and tools sit at the top of the panel, so the map can use the full height of the screen
+    move(top, panel, $("#phead"));
     move($("#goTo")?.closest("label"), $("#crumbSel"));
     move($("#chips"), $("#frow"), $("#addFilter"));
     move($("#sentence"), $("#sentSlot"));

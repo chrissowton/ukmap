@@ -44,16 +44,25 @@ window.NATIONS = ["England", "Wales", "Scotland", "Northern Ireland"];
 // Islands drawn in a box nearer the mainland so the UK fits the screen better (as on Ordnance Survey maps).
 // dx, dy: how far to move them, in degrees of longitude and latitude. contains(): which points belong to them.
 window.MAP_INSETS = [
-  { codes: ["S12000027"], label: "Shetland (moved closer)", dx: -6.0, dy: -0.95,
-    contains: (lon, lat) => lat > 59.7 && lon > -2.3 && lon < -0.6 },
+  { codes: ["S12000023"], label: "Orkney & Shetland", dx: 3.0, dy: -1.7,
+    contains: (lon, lat) => lat > 58.7 && lon > -3.5 && lon < -2.3 },
+  { codes: ["S12000027"], label: "Orkney & Shetland", dx: 2.6, dy: -2.5,
+    contains: (lon, lat) => lat > 59.4 && lon > -2.3 && lon < -0.6 },
 ];
+// Insets with the same label share one box.
+// One area group drawn again, enlarged, in a box of its own (London's 33 boroughs are too small to see otherwise).
+// box: [[west, north], [east, south]] in degrees: where the box sits on the map (here, the sea west of Wales).
+window.MAP_POPOUT = { region: "London", label: "London", box: [[-9.1, 53.85], [-5.75, 51.55]] };
 window.NATION_CODES = { E: "England", W: "Wales", S: "Scotland", N: "Northern Ireland" };
 
 // Not used on the UK site (kept so shared code finds them)
 window.SDGS = [];
 window.SDG_STATUS = [];
 
-window.FILTER_GROUPS = ["Places", "Population", "Age"];
+window.FILTER_GROUPS = ["Places", "Population", "Age", "Money and work", "Housing", "Deprivation", "Health", "Wellbeing",
+  "Education and skills", "Getting connected", "Services and culture", "Environment"];
+// the measures on the cards at the top of each area's page (and used to find similar areas)
+window.HEADLINE = ["population", "median_age", "pct_65plus", "gdhi_pc", "child_pov_ahc", "claimant_rate", "life_exp_f", "dep_all"];
 
 const num = (key, group, label, o) => ({ key, group, label, type: "range", scale: "linear", step: 1, source: "onsmye", year: key + "_year", ...o });
 
@@ -151,16 +160,19 @@ window.SOURCES = {
 
 /* Ready-made questions shown before any filter is set. */
 window.STARTERS = [
+  { title: "High child poverty", filters: [{ key: "child_pov_ahc", min: 35 }] },
+  { title: "Low incomes, many children", filters: [{ key: "gdhi_pc", max: 19000 }, { key: "pct_0_15", min: 20 }] },
+  { title: "Shorter lives", filters: [{ key: "life_exp_m", max: 77 }] },
+  { title: "Ageing and rural", filters: [{ key: "pct_65plus", min: 27 }, { key: "density", max: 150 }] },
+  { title: "Poor broadband", filters: [{ key: "slow_bb", min: 5 }] },
   { title: "Shrinking populations", filters: [{ key: "pop_change_10y", max: 0 }] },
-  { title: "More over-65s than children", filters: [{ key: "pct_65plus", min: 22 }, { key: "pct_0_15", max: 16 }] },
   { title: "Fast-growing places", filters: [{ key: "pop_change_10y", min: 10 }] },
-  { title: "Youngest places", filters: [{ key: "median_age", max: 36 }] },
-  { title: "Crowded places", filters: [{ key: "density", min: 5000 }] },
-  { title: "Scotland's ageing areas", filters: [{ key: "nation", values: ["Scotland"] }, { key: "median_age", min: 46 }] },
 ];
 
 /* Puzzles for "Question of the day". Only puzzles with 1–8 answers in the current data are shown. */
 window.PUZZLES = [
+  { q: "Which areas have more than 40% of children in poverty after housing costs?", filters: [{ key: "child_pov_ahc", min: 40 }] },
+  { q: "Where do women live longest on average: above 86 years?", filters: [{ key: "life_exp_f", min: 86 }] },
   { q: "Which areas outside London have more than 5,000 people per km²?", filters: [{ key: "density", min: 5000 }, { key: "region", values: window.REGIONS.filter((r) => r !== "London") }] },
   { q: "Find a Welsh area where the population grew by more than 5% in 10 years.", filters: [{ key: "nation", values: ["Wales"] }, { key: "pop_change_10y", min: 5 }] },
   { q: "Which areas have a median age over 52?", filters: [{ key: "median_age", min: 52 }] },
@@ -169,6 +181,18 @@ window.PUZZLES = [
 
 /* Families: related measures shown as ONE item in the filter menu, with a picker inside. */
 window.FAMILIES = [
+  { id: "le", label: "Life expectancy", short: "Life expectancy", info: "How long people can expect to live, and to live in good health.",
+    variants: [["life_exp_f", "Women"], ["life_exp_m", "Men"], ["hle_f", "Healthy, women"], ["hle_m", "Healthy, men"]] },
+  { id: "childpov", label: "Child poverty", short: "Child poverty", info: "Share of children in households below 60% of the median income, after or before housing costs.",
+    variants: [["child_pov_ahc", "After housing costs"], ["child_pov_bhc", "Before housing costs"]] },
+  { id: "wb", label: "Personal wellbeing", short: "Wellbeing", info: "How people rate their own lives, from 0 to 10 (ONS Annual Population Survey).",
+    variants: [["satisfaction", "Life satisfaction"], ["happiness", "Happiness"], ["worthwhile", "Worthwhile"], ["anxiety", "Anxiety"]] },
+  { id: "dep", label: "Deprivation", short: "Deprivation", info: "Share of an area's neighbourhoods among the most deprived 10% in its nation. Each nation has its own index, so compare within a nation.",
+    variants: [["dep_all", "All domains"], ["dep_income", "Income"], ["dep_employment", "Employment"], ["dep_health", "Health"], ["dep_education", "Education"]] },
+  { id: "work", label: "Work", short: "Work", info: "Who is in work, out of work, or not looking for work.",
+    variants: [["employment_rate", "Employment rate"], ["inactive", "Economically inactive"], ["unemployment", "Unemployment rate"], ["claimant_rate", "Claimant count"]] },
+  { id: "bb", label: "Broadband and mobile", short: "Connectivity", info: "Broadband and mobile phone coverage, from Ofcom.",
+    variants: [["full_fibre", "Full fibre"], ["slow_bb", "Below 30 Mbit/s"], ["cover_4g", "4G"], ["cover_5g", "5G"]] },
   { id: "age", label: "Age structure", short: "Age", info: "How old the population is: the median age and the share of children, working-age adults and older people.",
     variants: [["median_age", "Median age"], ["pct_0_15", "% aged 0–15"], ["pct_16_64", "% aged 16–64"], ["pct_65plus", "% aged 65+"]] },
   { id: "growth", label: "Population change", short: "Population change", info: "How the population is changing: over one year or over ten years.",
@@ -178,6 +202,12 @@ window.FAMILIES = [
 /* Themes along the top of the page; each opens a panel with these categories. */
 window.THEMES = [
   { id: "people", label: "People", groups: ["Population", "Age"] },
+  { id: "money", label: "Money and work", groups: ["Money and work", "Housing"] },
+  { id: "deprivation", label: "Deprivation", groups: ["Deprivation"] },
+  { id: "health", label: "Health and wellbeing", groups: ["Health", "Wellbeing"] },
+  { id: "learning", label: "Education", groups: ["Education and skills"] },
+  { id: "services", label: "Services", groups: ["Getting connected", "Services and culture"] },
+  { id: "environment", label: "Environment", groups: ["Environment"] },
   { id: "places", label: "Places", groups: ["Places"] },
 ];
 window.PHYS_THEMES = [];

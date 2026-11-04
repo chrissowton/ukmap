@@ -6,10 +6,11 @@ Free, open maps and data for every local authority in the UK, for charities, com
 
 Which Places? is built from [Which Countries?](https://github.com/chrissowton/worldmap), the open-source world map for geography, and shares its code.
 
-## What's in release 1.0.2
+## What's in release 1.1
 
 - The 361 local authorities of England, Wales, Scotland and Northern Ireland (detailed May 2025 boundaries), grouped into the 12 UK regions and the four nations, with Shetland in an inset and a Go to menu for every nation and region.
 - A layout made for a tall country: the map on the left at full height; on the right, a trail (United Kingdom › nation › region › area) with previous and next, the filters as chips, a sortable results table, and area profiles comparing each place with its region, nation and the UK.
+- 54 local measures on money and work, housing, health, wellbeing, education, connectivity, services, environment and deprivation (all four nations' indices), from ONS Explore Local Statistics and the IMD package; see DATA-SOURCES.md.
 - Population, density, growth, median age and age groups, every year from 1991 (2001 in Northern Ireland) to 2025, with a population pyramid for every area.
 - Filters, Compare, Rankings, Charts, Insights, the statistics toolkit, About this data, downloads (PNG, SVG, CSV), share links, embedding, and a page for every measure (`m/`).
 
@@ -22,6 +23,7 @@ Plain JavaScript with D3 7.9.0 and topojson 3.0.2, no build step. The browser lo
 | `areas.json` | One row per local authority: its ONS code, name, nation, region and latest figures |
 | `areas.topo.json` | The map (local authority boundaries) |
 | `timeseries.json` | Every yearly measure, 1991–2025 |
+| `measures.js` | Labels, explanations and sources for the release 1.1 measures (written by `scripts/build_measures.py`) |
 | `pyramids.json` | Population pyramids every five years |
 | `benchmarks.json` | The same measures for regions, nations and the UK (used from release 1.5) |
 | `filters.js` | Every measure: its name, explanation, source and which nations it covers |

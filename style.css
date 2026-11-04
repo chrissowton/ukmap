@@ -2599,3 +2599,69 @@ body.desk #results > .detail h2 { font-size: 30px; margin: 0; }
 
 /* the zoom-to menu in the breadcrumb, as a quiet pill */
 .crumbs .goto select { border-radius: 999px; padding: 3px 10px; background: var(--bg); font-size: 12.5px; }
+
+/* =====================================================================
+   Release 1.1: a bigger map. The title bar moves into the panel, so the map has the full height;
+   map buttons on the left (over the Atlantic), Orkney and Shetland and the London box in the sea.
+   ===================================================================== */
+body.desk .wpanel > .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 22px 8px; border-bottom: 0; background: var(--surface); position: relative; z-index: 45; flex: none; box-shadow: none; }
+body.desk .wpanel > .top .brand { order: 1; flex: none; }
+body.desk .wpanel > .top .brand h1 { font-size: 22px; }
+body.desk .wpanel > .top .add { order: 2; flex: 1 1 200px; min-width: 160px; }
+body.desk .wpanel > .top .toptools { order: 3; }
+body.desk .wpanel > .top .toptabs { order: 4; flex: 1 0 100%; margin-left: 0; }
+body.desk .wpanel > .top .toptabs #views { width: fit-content; max-width: 100%; }
+body.desk .wpanel > .top #dockTop:empty { display: none; }
+body.desk .wpanel > .top .toptools #ttStx .cp-tool, body.desk .wpanel > .top .toptools #ttDl .cp-tool, body.desk .wpanel > .top .toptools #ttShare .cp-tool { font-size: 0; padding: 6px 9px; gap: 0; }
+body.desk .wpanel > .top .toptools .cp-tool .cp-ic { font-size: 15px; }
+body.desk .phead { padding-top: 6px; }
+
+/* map controls: down the left edge */
+body.desk .zoom { top: 12px; left: 12px; right: auto; }
+body.desk #mmCard { left: 56px; right: auto; }
+
+/* "Whole UK" */
+.ukbtn { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 8; display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px 6px 11px; border-radius: 999px; border: 1px solid var(--accent); background: var(--surface); color: var(--accent); font-weight: 600; font-size: 13px; box-shadow: 0 4px 14px rgba(0, 0, 0, .14); }
+.ukbtn:hover { background: var(--accent); color: #fff; }
+.ukbtn[hidden] { display: none; }
+@media (max-width: 760px) { .ukbtn { top: 8px; } }
+
+/* inset boxes */
+#map g.inset rect, #map g.popout rect.pframe { fill: color-mix(in srgb, var(--surface) 55%, transparent); stroke: var(--muted); stroke-width: 0.8; vector-effect: non-scaling-stroke; stroke-dasharray: none; }
+#map g.inset text, #map g.popout text { font-family: var(--body); font-size: 10.5px; fill: var(--muted); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+#map g.popout rect.pframe { cursor: zoom-in; }
+#map g.popout text.pzoom { fill: var(--accent); text-anchor: end; cursor: pointer; text-decoration: underline; }
+#map g.popout text.pzoom:hover { fill: var(--ink); }
+body.desk #map g.inset text { font-size: 10.5px; }
+
+/* a slimmer key card: the year slider in the same row as play */
+body.desk .mapfoot { padding: 7px 12px; gap: 4px; }
+body.desk .mapfoot .timebar .tmain { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
+body.desk .mapfoot .timebar .trow { flex: none; gap: 6px; margin: 0; }
+body.desk .mapfoot .timebar .tslide { flex: 1; min-width: 90px; margin: 0; }
+body.desk .mapfoot .timebar .tnote { display: none; }
+body.desk .mapfoot .timebar .tyear { font-size: 15px; }
+body.desk .mapfoot .timebar .play { width: 30px; height: 30px; font-size: 12px; }
+body.desk .mapfoot .timebar #tSpeed { display: none; }
+body.desk .mapfoot .timebar .tswipe { font-size: 0; }
+body.desk .mapfoot .timebar .tswipe::before { content: "⇆"; font-size: 15px; }
+
+/* colours for the UK site's groups of measures */
+[data-g="places"] { --gc: var(--g-geography); }
+[data-g="age"] { --gc: var(--g-population); }
+[data-g="money-and-work"] { --gc: var(--g-work-money); }
+[data-g="housing"] { --gc: var(--g-cities); }
+[data-g="deprivation"] { --gc: var(--g-refugees); }
+[data-g="wellbeing"] { --gc: var(--g-happiness-trust); }
+[data-g="education-and-skills"] { --gc: var(--g-development); }
+[data-g="getting-connected"] { --gc: var(--g-technology); }
+[data-g="services-and-culture"] { --gc: var(--g-culture); }
+
+/* the "Add a filter" panel on a laptop: the themes as tabs across the top, a steady width */
+body.desk .tpanel:not(.sheet) { width: min(700px, calc(100% - 40px)); }
+body.desk .tpanel .tp-head { display: flex; align-items: flex-start; gap: 8px; padding: 0 0 10px; margin: 0 0 10px; border-bottom: 1px solid var(--line); background: none; }
+body.desk .tpanel .tp-tabs { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+body.desk .tpanel .tp-tabs button { flex: none; border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 5px 12px; font-weight: 600; font-size: 13px; color: var(--ink); }
+body.desk .tpanel .tp-tabs button:hover { border-color: var(--accent); }
+body.desk .tpanel .tp-tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+body.desk .tpanel .tp-body { columns: 2 260px; }

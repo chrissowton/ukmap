@@ -11,6 +11,7 @@ const ctx = { window: {}, console };
 ctx.window.window = ctx.window;
 vm.createContext(ctx);
 vm.runInContext(read("filters.js"), ctx);
+vm.runInContext(read("measures.js"), ctx);   // the local measures added in release 1.1
 const { FILTERS, SOURCES, SITE, FILTER_GROUPS, THEMES } = ctx.window;
 const BASE = (SITE.url || "https://chrissowton.github.io/ukmap/").replace(/\/?$/, "/");
 
@@ -108,12 +109,12 @@ for (const f of measures) {
 <dt>Highest</dt><dd>${esc(top.r.name)}: ${esc(fmt(f, top.v))}</dd>
 <dt>Lowest</dt><dd>${esc(bottom.r.name)}: ${esc(fmt(f, bottom.v))}</dd>
 <dt>The middle area</dt><dd>${esc(fmt(f, med))} (half the areas are above this, half below)</dd>
-<dt>Countries with data</dt><dd>${vals.length} of ${rows.length}</dd>
+<dt>Areas with data</dt><dd>${vals.length} of ${rows.length}</dd>
 <dt>Year</dt><dd>${esc(yl || "latest")}${sp ? `; every year from ${sp[0]} to ${sp[1]} on the site` : ""}</dd>
 <dt>Source</dt><dd>${S.url && S.url !== "#" ? `<a href="${esc(S.url)}" rel="noopener">${esc(S.name)}</a>` : esc(S.name || "")}${S.licence ? ` (${esc(S.licence)})` : ""}</dd>
 </dl>
 <h2>Every area ranked</h2>
-<table><thead><tr><th>#</th><th>Country</th><th>${esc(f.label)}</th><th class="b"></th></tr></thead><tbody>
+<table><thead><tr><th>#</th><th>Area</th><th>${esc(f.label)}</th><th class="b"></th></tr></thead><tbody>
 ${vals.map((d, i) => `<tr><td class="r">${i + 1}</td><td>${esc(d.r.name)}</td><td class="n">${esc(fmt(f, d.v))}</td><td class="b"><div class="bar" style="width:${Math.max(0.5, (100 * Math.abs(d.v)) / max).toFixed(1)}%"></div></td></tr>`).join("\n")}
 </tbody></table>
 ${related.length ? `<h2>Related measures</h2><ul class="rel">${related.map((g) => `<li><a href="${g.slug}.html">${esc(g.label)}</a></li>`).join("")}</ul>` : ""}`;

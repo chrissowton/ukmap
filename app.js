@@ -4,7 +4,7 @@
 
   // ---------- Load data ----------
   // ?v= makes browsers fetch fresh data after the site is updated (raise it in index.html too)
-  const DATA_VERSION = "3";
+  const DATA_VERSION = "5";
   // the single-file version carries its data compressed, and unpacks it first
   if (window.__READY__) await window.__READY__;
   const loadJSON = (url) => fetch(url + "?v=" + DATA_VERSION).then((r) => { if (!r.ok) throw new Error(url); return r.json(); });
@@ -32,7 +32,17 @@
   // ---------- Year slider: which measures have yearly data ----------
   const TS = timeseries ? timeseries.series : {};
   // survey measures are stored sparsely ([year, value, …]) to keep the file small
-  const SURVEY_KEYS = new Set(Object.keys(timeseries?.sparse || {}));
+  // which sparse measures carry their last value forward for up to 8 years (the world site's surveys); the UK site lists none
+  const SURVEY_KEYS = new Set(timeseries?.carry ?? Object.keys(timeseries?.sparse || {}));
+  // yearly runs: [first year, value, value, …] (null for a missing year)
+  for (const [k, byIso] of Object.entries(timeseries?.runs || {})) {
+    TS[k] = {};
+    for (const [iso, run] of Object.entries(byIso)) {
+      const arr = new Array(timeseries.years.length).fill(null);
+      for (let i = 1; i < run.length; i++) { const j = run[0] + i - 1 - timeseries.years[0]; if (j >= 0 && j < arr.length) arr[j] = run[i]; }
+      TS[k][iso] = arr;
+    }
+  }
   for (const [k, byIso] of Object.entries(timeseries?.sparse || {})) {
     TS[k] = {};
     for (const [iso, pairs] of Object.entries(byIso)) {
@@ -111,6 +121,7 @@
     per1000: " per 1,000 people", per1000birth: " per 1,000 births", per1000women: " per 1,000 teenage girls",
     per100k: " per 100,000 births", per100kpop: " per 100,000 people", density: " people per km²", years: " years",
     permillion: " per million people", per100: " per 100 people", kwh: " per person",
+    per10k: " per 10,000 people", per1000dw: " per 1,000 homes", score10: " out of 10", ratio: " times earnings", gbpw: " a week", years1: " years", tonnes: " CO₂e per person",
   };
   // Full form, used in sentences and profiles: "20 per 1,000 people"
   function fmt(f, v) {
@@ -125,6 +136,14 @@
       case "pct": return (a < 10 && !Number.isInteger(v) ? v.toFixed(1) : Math.round(v)) + "%";
       case "people": return compact(v);
       case "usd": return "$" + compact(v);
+      case "gbp": return "£" + compact(v);
+      case "gbp1": return "£" + (a < 100 ? v.toFixed(1) : Math.round(v));
+      case "gbpw": return "£" + Math.round(v);
+      case "ratio": return (+v.toFixed(1)) + "×";
+      case "years1": return v.toFixed(1);
+      case "score10": return v.toFixed(2);
+      case "per10k": case "per1000dw": return String(a < 10 ? +v.toFixed(1) : Math.round(v));
+      case "kwhm": return d3.format(",")(Math.round(v)) + " kWh";
       case "index": return v.toFixed(2);
       case "dec1": return String(+v.toFixed(1));
       case "dec3": return v.toFixed(3);
@@ -161,6 +180,7 @@
     if (v == null) return "no data";
     if (f.format === "people") return d3.format(",")(v);
     if (f.format === "usd") return "$" + d3.format(",")(v);
+    if (f.format === "gbp") return "£" + d3.format(",")(Math.round(v));
     if (f.format === "km2") return d3.format(",")(Math.round(v)) + " km²";
     if (f.format === "tonnes") return v.toFixed(2) + " t";
     return fmt(f, v);
@@ -601,13 +621,45 @@
   // a Transverse Mercator centred on 2°W, like the Ordnance Survey's National Grid
   const projection = d3.geoTransverseMercator().rotate([2, -49]);
   const path = d3.geoPath(projection);
-  const paths = gLand.selectAll("path").data(geo).join("path").attr("data-iso", (d) => d.rec?.iso3 || "");
+  const mainPaths = gLand.selectAll("path").data(geo).join("path").attr("data-iso", (d) => d.rec?.iso3 || "");
+  // London (window.MAP_POPOUT in filters.js) drawn a second time, enlarged, in a box of its own.
+  // The copies carry the same data and code, so colours, hover, clicks and highlights all work on them too.
+  const POP = window.MAP_POPOUT;
+  const popGeo = POP ? geo.filter((d) => d.rec && d.rec.region === POP.region) : [];
+  const gPop = gLand.append("g").attr("class", "popout");
+  const popFrame = gPop.append("rect").attr("class", "pframe").attr("rx", 6);
+  const popInner = gPop.append("g");
+  const popPaths = popInner.selectAll("path").data(popGeo).join("path").attr("data-iso", (d) => d.rec.iso3);
+  const popLabel = gPop.append("text").attr("class", "plabel").text(POP ? POP.label : "");
+  const popZoom = gPop.append("text").attr("class", "pzoom").attr("role", "button").attr("tabindex", 0).text("Zoom in ›");
+  const paths = d3.selectAll([...mainPaths.nodes(), ...popPaths.nodes()]);
+  const popCorners = POP ? { type: "Feature", geometry: { type: "MultiPoint", coordinates: POP.box } } : null;
   const onMap = new Set(geo.map((d) => d.rec?.iso3).filter(Boolean));
   let k = 1;
 
   let mapTopPad = 0, mapLeftPad = 0, mapBottomPad = 0;
   const narrow = () => window.matchMedia("(max-width: 760px)").matches;
+  // the map is fitted to the UK plus the London box
+  const fcAll = { type: "FeatureCollection", features: popCorners && popGeo.length ? [...geo, popCorners] : geo };
+  // On a laptop or bigger, make the map column exactly as wide as the UK's shape needs at full height,
+  // leaving the rest of the screen to the panel. Returns true if the width changed.
+  let mapWSet = 0;
+  function fitMapWidth() {
+    if (!desk()) return false;
+    const H = window.innerHeight;
+    const foot = $("#mapfoot");
+    const fp = foot && foot.offsetParent && !foot.classList.contains("empty") ? foot.offsetHeight + 22 : 16;
+    const b = d3.geoPath(d3.geoTransverseMercator().rotate(projection.rotate()).scale(1).translate([0, 0])).bounds(fcAll);
+    const ratio = (b[1][0] - b[0][0]) / (b[1][1] - b[0][1]);
+    const want = Math.round((H - 16 - fp) * ratio + 40);
+    const w = Math.round(Math.max(360, Math.min(want, window.innerWidth * 0.6, window.innerWidth - 540)));
+    if (Math.abs(w - mapWSet) <= 3) return false;
+    mapWSet = w;
+    document.body.style.setProperty("--mapw", w + "px");
+    return true;
+  }
   function layout() {
+    fitMapWidth();
     const box = $("#mapstage").getBoundingClientRect();
     const w = Math.max(320, box.width), h = Math.max(240, box.height);
     svg.attr("viewBox", `0 0 ${w} ${h}`);
@@ -615,8 +667,8 @@
     // a little room round the world, and space at the top for the quiz card when it sits there
     const foot = desk() ? $("#mapfoot") : null;
     const footPad = foot && foot.offsetParent && !foot.classList.contains("empty") ? foot.offsetHeight + 22 : 0;
-    const padX = Math.max(16, w * 0.025), top = Math.max(16, mapTopPad), bottom = Math.max(16, footPad), left = Math.max(padX, mapLeftPad);
-    const fc = { type: "FeatureCollection", features: geo };
+    const padX = desk() ? 20 : Math.max(16, w * 0.025), top = Math.max(16, mapTopPad), bottom = Math.max(16, footPad), left = Math.max(padX, mapLeftPad);
+    const fc = fcAll;
     projection.fitExtent([[left, top], [w - padX, Math.max(top + 120, h - bottom)]], fc);
     if (mapBottomPad > 0) {
       // the quiz card is open at the bottom: move the world up out of its way, shrinking it a little only if it must
@@ -628,16 +680,34 @@
       projection.translate([t[0] + (left + w - padX) / 2 - (b[0][0] + b[1][0]) / 2, t[1] + top - b[0][1]]);
     }
     paths.attr("d", path);
+    // the London box: scale the copies to fill it, then shrink the box round them
+    if (popCorners && popGeo.length) {
+      const [p0, p1] = POP.box.map((c) => projection(c));
+      const bx = Math.min(p0[0], p1[0]), by = Math.min(p0[1], p1[1]), bw = Math.abs(p1[0] - p0[0]), bh = Math.abs(p1[1] - p0[1]);
+      const [[lx0, ly0], [lx1, ly1]] = d3.geoPath(projection).bounds({ type: "FeatureCollection", features: popGeo });
+      const pad = 8, head = 18, sc = Math.min((bw - 2 * pad) / (lx1 - lx0), (bh - 2 * pad - head) / (ly1 - ly0));
+      const w2 = (lx1 - lx0) * sc + 2 * pad, h2 = (ly1 - ly0) * sc + 2 * pad + head;
+      const x0 = bx, y0 = by + (bh - h2) / 2;
+      popInner.attr("transform", `translate(${x0 + pad - lx0 * sc},${y0 + head + pad - ly0 * sc}) scale(${sc})`);
+      popFrame.attr("x", x0).attr("y", y0).attr("width", w2).attr("height", h2);
+      popLabel.attr("x", x0 + 8).attr("y", y0 + 14);
+      popZoom.attr("x", x0 + w2 - 8).attr("y", y0 + 14);
+    }
     // a box round each inset, with its name
-    const frames = INSETS.map((ins) => {
+    const frames = [...new Set(INSETS.map((x) => x.label))].map((label) => {
+      const ins = { label, codes: INSETS.filter((x) => x.label === label).flatMap((x) => x.codes) };
       const fs = geo.filter((d) => ins.codes.includes(d.id));
       if (!fs.length) return null;
       const [[x0, y0], [x1, y1]] = path.bounds({ type: "FeatureCollection", features: fs });
-      return { ...ins, x: x0 - 6, y: y0 - 6, w: x1 - x0 + 12, h: y1 - y0 + 12 };
+      return { ...ins, x: x0 - 8, y: y0 - 24, w: x1 - x0 + 16, h: y1 - y0 + 32 };
     }).filter(Boolean);
-    const fr = gLand.selectAll("g.inset").data(frames).join((en) => { const g = en.append("g").attr("class", "inset"); g.append("rect"); g.append("text"); return g; });
+    // the boxes go underneath the islands
+    const fr = gLand.selectAll("g.inset").data(frames).join((en) => { const g = en.insert("g", ":first-child").attr("class", "inset"); g.append("rect"); g.append("text"); return g; });
     fr.select("rect").attr("x", (d) => d.x).attr("y", (d) => d.y).attr("width", (d) => d.w).attr("height", (d) => d.h);
-    fr.select("text").attr("x", (d) => d.x + 4).attr("y", (d) => d.y + d.h + 11).text((d) => d.label);
+    fr.select("rect").attr("rx", 6);
+    fr.select("text").attr("x", (d) => d.x + 8).attr("y", (d) => d.y + 14).text((d) => d.label);
+    // widen a box if its name is longer than the islands are wide
+    fr.each(function (d) { const tw = this.querySelector("text").getComputedTextLength?.() || 0; if (tw + 16 > d.w) { const ex = tw + 16 - d.w; d3.select(this).select("rect").attr("x", d.x - ex / 2).attr("width", tw + 16); d3.select(this).select("text").attr("x", d.x - ex / 2 + 8); } });
     riverPaths.attr("d", path); lakePaths.attr("d", path);
     invalidatePoints();
     window.WP?.layout(Math.max(0.55, Math.min(1, w / 1100)));
@@ -663,11 +733,29 @@
     gDots.selectAll("circle").attr("r", 4.2 / k);
     gCities.selectAll("circle").attr("r", (d) => cityR(d) / k);
     window.WP?.zoomed(e.transform);
+    showUkBtn();
   });
   svg.call(zoom).on("dblclick.zoom", null);
   $("#zin").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1.6);
   $("#zout").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.6);
   $("#zreset").onclick = () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+  // "Whole UK": shown whenever the map is zoomed in or an area is open; takes you back to the whole country
+  const ukBtn = document.createElement("button");
+  ukBtn.type = "button"; ukBtn.id = "ukBtn"; ukBtn.className = "ukbtn"; ukBtn.hidden = true;
+  ukBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 8 3l6 5.5M4 7.2V13h8V7.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Whole UK`;
+  ukBtn.title = "Back to the whole UK";
+  $("#mapstage").appendChild(ukBtn);
+  function showUkBtn() { const b = document.getElementById("ukBtn"); if (b) b.hidden = !(k > 1.02 || (desk() && state.selected)); }
+  function goWholeUK() {
+    if (state.selected) { state.selected = null; render(); }
+    const g = $("#goTo"); if (g) g.value = "";
+    svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+  }
+  ukBtn.onclick = goWholeUK;
+  // the London box: "Zoom in" (or a click on its empty space) zooms the main map to London
+  const popGo = () => { if (POP) zoomToGroup("region", POP.region); };
+  popZoom.on("click", (e) => { e.stopPropagation(); popGo(); }).on("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); popGo(); } });
+  popFrame.on("click", (e) => { e.stopPropagation(); popGo(); });
   // ---------- Go to a nation or region ----------
   (function goTo() {
     const bar = $(".bar");
@@ -941,6 +1029,7 @@
       .attr("class", (d) => clsFor(d.rec) + (d.rec && d.rec.iso3 === state.selected ? " sel" : nbSel.has(d.id) ? " nbr" : ""))
       .style("fill", (d) => fillFor(d.rec));
     paths.filter(".nbr").raise(); paths.filter(".sel").raise();
+    showUkBtn();
     drawDots();
     drawCities();
     renderSolo();
@@ -2069,6 +2158,8 @@
   }
 
   // ---------- One area: how it compares, and ways to move on ----------
+  // the period a figure is for: "2024/25", "2022–24"; measures whose year differs by nation show each area's own year
+  const yearOf = (f, r) => (f.yearText && !/^\d{4}–\d{4}$/.test(f.yearText) ? f.yearText : typeof f.year === "string" && r[f.year] ? String(r[f.year]) : null);
   const HEADLINE = () => (window.HEADLINE || ["population", "median_age", "pct_0_15", "pct_65plus", "pop_change_10y", "density"]).filter((k) => F[k]);
   function similarAreas(r, n = 6) {
     const ks = HEADLINE(), all = rows.filter((x) => x.sovereign);
@@ -2084,13 +2175,16 @@
     const med = (k, fil) => d3.median(all.filter(fil), (x) => x[k]);
     const cards = HEADLINE().filter((k) => r[k] != null).map((k) => {
       const f = F[k], v = r[k];
-      const vs = all.map((x) => x[k]).filter((x) => x != null);
+      // measures made differently in each nation (deprivation, apprenticeships) are compared within the nation only
+      const own = f.compare === "nation";
+      const vs = all.filter((x) => !own || x.nation === r.nation).map((x) => x[k]).filter((x) => x != null);
+      const where = own ? `areas in ${r.nation}` : "UK areas";
       const below = vs.filter((x) => x < v).length, above = vs.filter((x) => x > v).length, pct = Math.round((100 * below) / (vs.length - 1 || 1));
-      const rankTxt = !above ? "Highest of all UK areas" : !below ? "Lowest of all UK areas" : `Higher than ${pct}% of UK areas`;
-      const reg = r.region !== r.nation ? med(k, (x) => x.region === r.region) : null, nat = med(k, (x) => x.nation === r.nation), uk = med(k, () => true);
-      const yr = typeof f.year === "string" && r[f.year] ? r[f.year] : null;
-      return `<div class="scard"><div class="sk">${esc(f.short || f.label)}${yr ? ` <span>${yr}</span>` : ""}</div><div class="sv num">${esc(fmtShort(f, v))}</div>
-        <div class="sc">${reg != null ? `Region <b>${esc(fmtShort(f, reg))}</b> · ` : ""}${esc(r.nation)} <b>${esc(fmtShort(f, nat))}</b> · UK <b>${esc(fmtShort(f, uk))}</b></div>
+      const rankTxt = !above ? `Highest of all ${where}` : !below ? `Lowest of all ${where}` : `Higher than ${pct}% of ${where}`;
+      const reg = r.region !== r.nation ? med(k, (x) => x.region === r.region) : null, nat = med(k, (x) => x.nation === r.nation), uk = own ? null : med(k, () => true);
+      const yr = yearOf(f, r);
+      return `<div class="scard"><div class="sk">${esc(f.short || f.label)}${yr ? ` <span>${esc(yr)}</span>` : ""}</div><div class="sv num">${esc(fmtShort(f, v))}</div>
+        <div class="sc">${reg != null ? `Region <b>${esc(fmtShort(f, reg))}</b> · ` : ""}${esc(r.nation)} <b>${esc(fmtShort(f, nat))}</b>${uk != null ? ` · UK <b>${esc(fmtShort(f, uk))}</b>` : ""}</div>
         <div class="sp">${rankTxt}</div></div>`;
     }).join("");
     const nbs = (NB.get(r.iso3) || []).map((i) => byIso.get(i)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
@@ -2640,7 +2734,7 @@
           return `<button type="button" class="fchip${added ? " added" : ""}" data-id="${esc(e.id)}" data-g="${gslug(g)}">${entryTime(e) ? CLOCK : ""}<span>${esc(entryLabel(e))}</span>${added ? `<span class="tick" aria-label="added">✓</span>` : ""}</button>`;
         }).join("")}${es.length > SHOW_FIRST ? `<button type="button" class="more-btn" data-g="${esc(g)}">${open ? "Fewer" : `${es.length - SHOW_FIRST} more…`}</button>` : ""}</div></section>`;
       }).join("")}</div>
-      <p class="mkey">${state.mode === "physical" ? "" : `${CLOCK}<span>Has data for past years: use the year slider under the map.</span>`} <span class="mtick">✓</span><span>Added</span> <span class="mhint">${touch.matches ? "Tap a filter to see what it means." : "Hover over a filter to see what it means."} Filters stay when you switch between Human and Physical, so you can mix them.</span></p>`;
+      <p class="mkey">${state.mode === "physical" ? "" : `${CLOCK}<span>Has data for past years: use the year slider under the map.</span>`} <span class="mtick">✓</span><span>Added</span> <span class="mhint">${touch.matches ? "Tap a filter to see what it means." : "Hover over a filter to see what it means."}${(window.PHYS_THEMES || []).length ? " Filters stay when you switch between Human and Physical, so you can mix them." : ""}</span></p>`;
     renderThemeBar();
     placePanel(panel, t);
     panel.querySelectorAll(".tp-tabs button").forEach((b) => (b.onclick = () => showTheme(b.dataset.theme)));
@@ -2970,7 +3064,7 @@
       <div class="tablewrap"><table><thead><tr><th>Source</th><th>Used for</th><th>Licence</th></tr></thead><tbody>
       ${used.map((k) => { const s = window.SOURCES[k]; const fs = FILTERS.filter((f) => f.source === k).map((f) => f.label); return `<tr><td><a href="${s.url}" target="_blank" rel="noopener">${esc(s.name)}</a></td><td>${esc(fs.join(", ") || ({ gdl: "Regions within areas: the HDI, life expectancy, schooling, income and gender measures for 1,800 regions", gapmincm: "Income mountains (Charts)", unppp: "The shaded ranges on population projections" }[k] || "Area shapes"))}</td><td>${esc(s.licence)}</td></tr>`; }).join("")}
       </tbody></table></div>
-      <p>Areas are the 361 local authorities (lower tier) of the UK, on detailed May 2025 boundaries (ONS, BGC). Shetland is drawn in a box closer to the mainland. Regions are the 12 ITL1 regions: the nine English regions, Wales, Scotland and Northern Ireland. Contains OS data © Crown copyright and database right.</p>
+      <p>Areas are the 361 local authorities (lower tier) of the UK, on detailed May 2025 boundaries (ONS, BGC). Orkney and Shetland are drawn in a box in the North Sea, and London is drawn again, enlarged, in a box to the west. Deprivation, new homes and apprenticeships are measured differently in each nation, so compare them only within a nation. Regions are the 12 ITL1 regions: the nine English regions, Wales, Scotland and Northern Ireland. Contains OS data © Crown copyright and database right.</p>
     </div>`;
     el.hidden = false;
     $("#aboutClose").onclick = () => (el.hidden = true);
