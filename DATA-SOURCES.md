@@ -87,6 +87,43 @@ Notes:
 - Map files are simplified for the web with mapshaper (15%, weighted, shapes kept).
 - **Postcode finder:** `pc/<postcode district>.json` maps each postcode in the ONS Postcode Directory (including some no longer in use) to its small area and council.
 
+## Release 1.4: charities, schools, towns and cities
+
+### Charities (`org/<council code>.json`, built by `scripts/build_orgs.py`)
+
+| Register | Publisher | Licence |
+| --- | --- | --- |
+| Register of charities, full extract (charity, classification, area of operation), 4 November 2026 | Charity Commission for England and Wales | Open Government Licence v3.0 |
+| Scottish Charity Register download, 4 November 2026 | Scottish Charity Regulator (OSCR) | Open Government Licence v3.0; OSCR asks that the register is not used for direct marketing |
+| Register of charities, 4 November 2026 | Charity Commission for Northern Ireland | Open Government Licence v3.0 |
+
+How the site uses them:
+
+- Only registered (active) charities; in England and Wales, main charities only (not linked charities).
+- Each charity is placed in the neighbourhood of its registered postcode (from the ONS Postcode Directory). **No addresses, people's names, emails or phone numbers are shown or downloaded.** A registered postcode can be a trustee's home, so only the neighbourhood is given. 4,552 charities with no or unknown postcode are left out of the local lists.
+- "What it does" and "who it helps" are grouped by Which Places? into a dozen themes from each register's own categories (`THEMES` and `WHO` in the script).
+- **Charities working in an area** come from the England and Wales register's "area of operation" (council and county names matched to today's councils). Only charities that list three councils or fewer are shown, so the lists stay local.
+- Two new measures for every council: charities based there per 1,000 people, and their income per person. Both count charities by where they are registered, so head offices push London and city centres up.
+
+### Schools and children's centres
+
+| Data | Publisher | Licence |
+| --- | --- | --- |
+| Get Information about Schools: all establishment data and children's centres (open only), 5 November 2026 | Department for Education | Open Government Licence v3.0 |
+| Address list of schools | Welsh Government | Open Government Licence v3.0 |
+| School contact details: publicly funded schools open 31 July 2026 | Scottish Government | Open Government Licence v3.0 |
+| School enrolment, school level data 2025/26 (nursery, preschool, primary, post-primary, special) | Department of Education, Northern Ireland | Open Government Licence v3.0 |
+
+Schools are placed in the neighbourhood of their postcode (Northern Ireland's files give each school's data zone). Pupil numbers are shown where published (England, Wales and Northern Ireland), free school meals for England. Head teachers' names and contact details are not used.
+
+### Towns and cities (`towns.json`, built by `scripts/build_towns.py`)
+
+ONS's built-up areas (2022) for England and Wales, from the **LSOA (2021) to Built-up Area to LAD to Region (December 2022) Best Fit Lookup (V2)** (ONS Open Geography Portal, Open Government Licence). Each town is made of the LSOAs that best fit it, so its edges are approximate; towns of 5,000 people or more are kept (1,479). Population is added up; age and census shares are averages of its neighbourhoods weighted by population (estimates, marked ≈); deprivation is the share of its neighbourhoods in the nation's most deprived 10%. ONS splits London into boroughs' built-up areas. Scotland's and Northern Ireland's settlements are not included yet.
+
+### Northern Ireland neighbourhoods
+
+Population for each data zone (mid-2024) from NISRA's **2024 mid-year population estimates for small geographical areas** (MYE24_DZ.xlsx), Open Government Licence.
+
 ## Notes
 
 - **Area** is measured from the boundary map, which is clipped to the coastline and simplified, so it is close to but not exactly the official area.

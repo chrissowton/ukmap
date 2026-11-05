@@ -6,11 +6,12 @@ Free, open maps and data for every local authority in the UK, for charities, com
 
 Which Places? is built from [Which Countries?](https://github.com/chrissowton/worldmap), the open-source world map for geography, and shares its code.
 
-## What's in release 1.3
+## What's in release 1.4
 
 - The 361 local authorities of England, Wales, Scotland and Northern Ireland (detailed May 2025 boundaries), grouped into the 12 UK regions and the four nations, with Shetland in an inset and a Go to menu for every nation and region.
 - A layout made for a tall country: the map on the left at full height; on the right, a trail (United Kingdom › nation › region › area) with previous and next, the filters as chips, a sortable results table, and area profiles comparing each place with its region, nation and the UK.
 - 54 local measures on money and work, housing, health, wellbeing, education, connectivity, services, environment and deprivation (all four nations' indices), from ONS Explore Local Statistics and the IMD package; see DATA-SOURCES.md.
+- Charities from all three registers, schools and children's centres, placed in neighbourhoods (`org/`); towns and cities in England and Wales (`towns.json`).
 - Neighbourhoods: all 46,844 small areas in the UK, with deprivation, population, age and census figures, loaded one council at a time (`nb/`), and a postcode finder (`pc/`).
 - 25 census measures for all four nations (England, Wales and Northern Ireland 2021; Scotland 2022).
 - 23 city regions, and a page for every nation, region and city region with its own figures (official where published, otherwise worked out from its councils).
@@ -52,4 +53,6 @@ Run these in order (each adds to the files the one before wrote; inputs are list
 3. `scripts/build_census.py`: the census measures
 4. `scripts/build_groups.py`: figures for nations, regions and city regions
 5. `scripts/build_small.py`: neighbourhoods and postcodes
-6. `node make_pages.cjs`: a page for every measure
+6. `scripts/build_orgs.py`: charities, schools and children's centres
+7. `scripts/build_towns.py`: towns and cities
+8. `node make_pages.cjs`: a page for every measure

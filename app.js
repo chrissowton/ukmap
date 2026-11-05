@@ -4,7 +4,7 @@
 
   // ---------- Load data ----------
   // ?v= makes browsers fetch fresh data after the site is updated (raise it in index.html too)
-  const DATA_VERSION = "7";
+  const DATA_VERSION = "8";
   // the single-file version carries its data compressed, and unpacks it first
   if (window.__READY__) await window.__READY__;
   const loadJSON = (url) => fetch(url + "?v=" + DATA_VERSION).then((r) => { if (!r.ok) throw new Error(url); return r.json(); });
@@ -743,6 +743,7 @@
     window.WP?.zoomed(e.transform);
     showUkBtn();
     if (e.sourceEvent || k >= 7) nbUpdate();
+    gOrg.selectAll("circle").attr("r", function () { return (+this.dataset.r0 || 3) / k; });
   });
   svg.call(zoom).on("dblclick.zoom", null);
   $("#zin").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1.6);
@@ -754,9 +755,9 @@
   ukBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 8 3l6 5.5M4 7.2V13h8V7.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Whole UK`;
   ukBtn.title = "Back to the whole UK";
   $("#mapstage").appendChild(ukBtn);
-  function showUkBtn() { const b = document.getElementById("ukBtn"); if (b) b.hidden = !(k > 1.02 || (desk() && state.selected)); }
+  function showUkBtn() { const b = document.getElementById("ukBtn"); if (b) b.hidden = !(k > 1.02 || (desk() && (state.selected || state.town))); }
   function goWholeUK() {
-    if (state.selected) { state.selected = null; render(); }
+    if (state.selected || state.town) { state.selected = null; state.town = null; render(); }
     const g = $("#goTo"); if (g) g.value = "";
     svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
   }
@@ -803,6 +804,7 @@
   function nbWanted() {
     const want = new Set();
     if (state.selected && state.view === "map") want.add(state.selected);
+    if (state.town && state.view === "map" && TOWNS?.by.get(state.town)) TOWNS.by.get(state.town).la.forEach((c) => want.add(c));
     if (k >= 7 && state.view === "map") {
       if (!geoBounds) geoBounds = geo.filter((d) => d.rec).map((d) => [d.id, path.bounds(d)]);
       const t = d3.zoomTransform(svg.node()), vb = svg.attr("viewBox").split(" ").map(Number);
@@ -838,9 +840,10 @@
   const nbFmt = (key, v) => (v == null ? "no data" : NB_DECILE[key] ? `decile ${v}` : key === "ma" ? `${v}` : F[key] ? fmtShort(F[key], v) : `${v}%`);
   function nbDraw() {
     const fs = NBH.drawn.flatMap((t) => t.fs);
+    const townSet = state.town && TOWNS?.by.get(state.town) ? new Set(TOWNS.by.get(state.town).l) : null;
     const sc = nbScale();
     gNb.selectAll("path").data(fs, (d) => d.properties.c).join("path")
-      .attr("class", (d) => "nb" + (d.properties.c === state.nb ? " on" : ""))
+      .attr("class", (d) => "nb" + (d.properties.c === state.nb ? " on" : "") + (townSet ? (townSet.has(d.properties.c) ? " intown" : " outtown") : ""))
       .attr("data-nb", (d) => d.properties.c)
       .attr("d", path)
       .style("fill", (d) => sc.col(d.properties[sc.key]));
@@ -848,6 +851,7 @@
     gNbLine.selectAll("path").data(NBH.drawn, (t) => t.la).join("path").attr("class", "nbline").attr("d", (t) => path(t.outline));
     nbCtl.hidden = !fs.length;
     if (fs.length) nbControl(sc);
+    orgDots();
   }
   function nbControl(sc) {
     const cen = (NBH.meta?.census || []).filter((k2) => F[k2]);
@@ -858,8 +862,11 @@
       ? `<div class="nbkey"><span>Most deprived</span>${d3.range(1, 11).map((v) => `<i style="background:${sc.col(v)}" title="Decile ${v}"></i>`).join("")}<span>Least</span></div>`
       : sc.kind === "quint" ? `<div class="nbkey">${sc.ramp.map((c, i) => `<i style="background:${c}" title="${i === 0 ? `up to ${nbFmt(sc.key, sc.breaks[0])}` : i === 4 ? `${nbFmt(sc.key, sc.breaks[3])} and over` : `${nbFmt(sc.key, sc.breaks[i - 1])} to ${nbFmt(sc.key, sc.breaks[i])}`}"></i>`).join("")}</div>
         <p class="nbnote">${esc(nbFmt(sc.key, sc.lo))} to ${esc(nbFmt(sc.key, sc.hi))}: five equal groups of the neighbourhoods shown</p>` : "";
-    nbCtl.innerHTML = `<label class="nbsel"><span>Neighbourhoods</span><select id="nbShade" aria-label="Shade neighbourhoods by">${opts}</select></label>${legend}`;
-    const s = nbCtl.querySelector("select");
+    nbCtl.innerHTML = `<label class="nbsel"><span>Neighbourhoods</span><select id="nbShade" aria-label="Shade neighbourhoods by">${opts}</select></label>${legend}
+      ${state.selected ? `<label class="nbsel nbdots"><span>Dots</span><select id="nbDots" aria-label="Dots on the map"><option value="">None</option><option value="ch" ${ORG.dots === "ch" ? "selected" : ""}>Charities based in each neighbourhood</option><option value="sc" ${ORG.dots === "sc" ? "selected" : ""}>Schools in each neighbourhood</option></select></label>` : ""}`;
+    const dsel = nbCtl.querySelector("#nbDots");
+    if (dsel) dsel.onchange = () => { ORG.dots = dsel.value; orgDots(); };
+    const s = nbCtl.querySelector("#nbShade");
     s.value = NBH.shade;
     s.onchange = () => { NBH.shade = s.value; nbDraw(); if (state.nb) renderNb(); };
   }
@@ -876,7 +883,7 @@
   function selectNb(code, zoomIt) {
     const p = NBH.rows.get(code);
     if (!p) return;
-    state.selected = p.la; state.nb = code; state.open = null;
+    state.selected = p.la; state.nb = code; state.open = null; state.orgs = false;
     if (state.view !== "map") state.view = "map";
     render();
     if (zoomIt) {
@@ -951,9 +958,10 @@
       ${ni === "N" ? `<p class="snote">Northern Ireland's population estimates and census tables for data zones are not in this release yet; its council figures are on ${esc(r.name)}'s page.</p>` : ""}
       ${ni === "E" || ni === "W" ? `<p class="snote">Some census topics (country of birth, veterans, sexual orientation) are not published for neighbourhoods in England and Wales.</p>` : ""}
       <p class="snote">Council, nation and UK columns are figures for the whole place. Population estimates for small areas are approximate; ONS asks that they are rounded to the nearest 100 when quoted.</p>
-      <div class="nbnav"><button type="button" class="achip go" id="nbBack">← ${esc(r.name)}</button></div>
+      <div class="nbnav"><button type="button" class="achip go" id="nbBack">← ${esc(r.name)}</button> <button type="button" class="achip go" id="nbOrgs">Charities and schools here</button></div>
     </div>`;
     $("#nbBack").onclick = () => { state.nb = null; render(); };
+    $("#nbOrgs").onclick = () => { state.orgs = true; ORG.tab = "ch"; render(); };
     el.querySelectorAll(".nbsh").forEach((b) => (b.onclick = () => { NBH.shade = b.dataset.k; nbDraw(); }));
   }
   // on a council's page: how its neighbourhoods compare
@@ -992,6 +1000,188 @@
       if (!hit) { const s = $("#sentence"); if (s) s.innerHTML = `Postcode <b>${esc(raw.toUpperCase())}</b> was not found. Check it, or try a nearby one.`; return false; }
       return nbLoad(hit.la).then(() => { selectNb(hit.code, true); return true; });
     });
+  }
+
+  // ---------- Charities, schools and children's centres (release 1.4) ----------
+  // org/<council code>.json: charities based in the council (placed in their neighbourhood, never at an address), charities
+  // based elsewhere that say they work there (England and Wales register), and schools and children's centres.
+  const ORG = { files: new Map(), loading: new Map(), meta: null, tab: "ch", q: "", theme: "", who: "", size: "", dots: "" };
+  loadJSON("org/index.json").then((m) => { ORG.meta = m; }).catch(() => {});
+  const REG = {
+    E: { name: "Charity Commission for England and Wales", url: (id) => `https://register-of-charities.charitycommission.gov.uk/en/charity-search/-/charity-details/${id}` },
+    S: { name: "Scottish Charity Regulator (OSCR)", url: (id) => `https://www.oscr.org.uk/about-charities/search-the-register/charity-details?number=${id}` },
+    N: { name: "Charity Commission for Northern Ireland", url: (id) => `https://www.charitycommissionni.org.uk/charity-details/?regId=${id}&subId=0` },
+  };
+  const SCH_URL = { E: (id) => `https://get-information-schools.service.gov.uk/Establishments/Establishment/Details/${id}`, W: (id) => `https://mylocalschool.gov.wales/School/${id}?lang=en` };
+  const SIZES = [["micro", "Under £10,000", 0, 1e4], ["small", "£10,000 to £100,000", 1e4, 1e5], ["medium", "£100,000 to £1 million", 1e5, 1e6], ["large", "£1 million to £10 million", 1e6, 1e7], ["major", "Over £10 million", 1e7, Infinity]];
+  const money = (v) => (v == null ? "–" : v >= 1e9 ? "£" + (+(v / 1e9).toPrecision(3)) + "bn" : v >= 1e6 ? "£" + (+(v / 1e6).toPrecision(3)) + "m" : v >= 1e3 ? "£" + (+(v / 1e3).toPrecision(3)) + "k" : "£" + Math.round(v));
+  function orgLoad(la) {
+    if (ORG.files.has(la)) return Promise.resolve(ORG.files.get(la));
+    if (ORG.loading.has(la)) return ORG.loading.get(la);
+    const p = fetch(`org/${la}.json?v=${DATA_VERSION}`).then((x) => (x.ok ? x.json() : null)).then((d) => {
+      if (!d) return null;
+      const o = {
+        ch: d.ch.map(([n, r, id, inc, nb, t, w, a]) => ({ n, r, id, inc, nb, t: t ? t.split(" ") : [], w: w ? w.split(" ") : [], a })),
+        wk: d.wk.map(([n, id, inc, t]) => ({ n, r: "E", id, inc, t: t ? t.split(" ") : [], w: [], away: true })),
+        sc: d.sc,
+      };
+      ORG.files.set(la, o);
+      return o;
+    }).catch(() => null);
+    ORG.loading.set(la, p);
+    return p;
+  }
+  const themeName = (k2) => (ORG.meta?.themes || []).find((x) => x[0] === k2)?.[1] || k2;
+  const whoName = (k2) => (ORG.meta?.who || []).find((x) => x[0] === k2)?.[1] || k2;
+  const nbName = (c) => NBH.rows.get(c)?.n || "";
+  // the council page: a short summary
+  function orgFillSummary(el, la) {
+    const box = el.querySelector("#orgSum");
+    if (!box) return;
+    orgLoad(la).then((o) => {
+      if (!o || !box.isConnected) return;
+      const r = byIso.get(la);
+      const schools = o.sc.filter((s) => s.k === "school"), centres = o.sc.filter((s) => s.k === "cc");
+      const inc = d3.sum(o.ch, (c) => c.inc || 0);
+      const small = o.ch.filter((c) => c.inc != null && c.inc < 1e5).length;
+      box.innerHTML = `<h4>Charities and schools</h4>
+        <p class="nbsumt"><b>${d3.format(",")(o.ch.length)}</b> registered charities are based here (${r.ch_per1k != null ? `${r.ch_per1k} per 1,000 people` : ""}), with a total yearly income of <b>${money(inc)}</b>; ${o.ch.length ? Math.round((100 * small) / o.ch.length) : 0}% have an income under £100,000.
+        ${o.wk.length ? `Another <b>${d3.format(",")(o.wk.length)}</b> charities based elsewhere say they work here.` : ""}</p>
+        <p class="nbsumt"><b>${d3.format(",")(schools.length)}</b> schools${centres.length ? ` and <b>${centres.length}</b> children's centres` : ""}.</p>
+        <div class="achips"><button type="button" class="achip go" data-org="ch">Charities</button><button type="button" class="achip go" data-org="sc">Schools</button>${o.wk.length ? `<button type="button" class="achip go" data-org="wk">Working here</button>` : ""}</div>`;
+      box.querySelectorAll("[data-org]").forEach((b) => (b.onclick = () => { ORG.tab = b.dataset.org; state.orgs = true; render(); }));
+    });
+  }
+  // the full list for a council (or one neighbourhood), with filters and a download
+  function orgFiltered(o, nb) {
+    const q = ORG.q.trim().toLowerCase();
+    if (ORG.tab === "sc") return o.sc.filter((s) => (!nb || s.nb === nb) && (!q || (s.n || "").toLowerCase().includes(q) || (s.ty || "").toLowerCase().includes(q)));
+    const list = ORG.tab === "wk" ? o.wk : o.ch;
+    const sz = SIZES.find((s) => s[0] === ORG.size);
+    return list.filter((c) => (!nb || c.nb === nb) && (!q || c.n.toLowerCase().includes(q) || (c.a || "").toLowerCase().includes(q))
+      && (!ORG.theme || c.t.includes(ORG.theme)) && (!ORG.who || c.w.includes(ORG.who)) && (!sz || (c.inc != null && c.inc >= sz[2] && c.inc < sz[3])));
+  }
+  function renderOrgs() {
+    const r = byIso.get(state.selected), el = $("#results");
+    const nb = state.nb && NBH.rows.get(state.nb) ? state.nb : null;
+    el.innerHTML = `<div class="detail orgpage"><p class="snote">Loading…</p></div>`;
+    orgLoad(r.iso3).then((o) => {
+      if (!o) { el.innerHTML = `<div class="detail"><p>No list for ${esc(r.name)}.</p></div>`; return; }
+      const list = orgFiltered(o, nb);
+      const isCh = ORG.tab !== "sc";
+      const shown = list.slice(0, 300);
+      const opt = (arr, cur, all) => `<option value="">${all}</option>` + arr.map(([k2, l]) => `<option value="${k2}" ${cur === k2 ? "selected" : ""}>${esc(l)}</option>`).join("");
+      const rowsH = isCh ? shown.map((c) => `<tr><td><a href="${REG[c.r].url(c.id)}" target="_blank" rel="noopener">${esc(c.n)}</a>${c.a ? `<div class="oa">${esc(c.a)}${c.a.length >= 110 ? "…" : ""}</div>` : ""}</td>
+          <td class="num">${money(c.inc)}</td><td>${esc(c.t.slice(0, 3).map(themeName).join(", "))}</td><td>${c.nb ? `<button type="button" class="linkbtn" data-nb="${c.nb}">${esc(nbName(c.nb) || "neighbourhood")}</button>` : ""}</td></tr>`).join("")
+        : shown.map((s) => `<tr><td>${SCH_URL[s.src] && s.k === "school" ? `<a href="${SCH_URL[s.src](s.id)}" target="_blank" rel="noopener">${esc(s.n)}</a>` : esc(s.n)}<div class="oa">${esc([s.ty, s.tr].filter(Boolean).join(" · "))}</div></td>
+          <td>${esc(s.k === "cc" ? "Children's centre" : s.ph || "")}</td><td class="num">${s.pu != null ? d3.format(",")(s.pu) : ""}</td><td class="num">${s.fsm != null ? s.fsm + "%" : ""}</td><td><button type="button" class="linkbtn" data-nb="${s.nb}">${esc(nbName(s.nb) || "neighbourhood")}</button></td></tr>`).join("");
+      el.innerHTML = `<div class="detail orgpage">
+        <button type="button" class="achip go" id="orgBack">← ${esc(nb ? nbName(nb) : r.name)}</button>
+        <h2>${ORG.tab === "sc" ? "Schools" : ORG.tab === "wk" ? "Charities working here" : "Charities"} in ${esc(nb ? nbName(nb) : r.name)}</h2>
+        <div class="otabs" role="tablist">${[["ch", "Based here", o.ch.length], ["wk", "Working here from elsewhere", o.wk.length], ["sc", "Schools and children's centres", o.sc.length]].filter(([k2, , n]) => n || k2 === "ch").map(([k2, l, n]) => `<button type="button" role="tab" data-t="${k2}" aria-selected="${ORG.tab === k2}">${esc(l)} <span>${d3.format(",")(nb ? (k2 === "sc" ? o.sc.filter((s) => s.nb === nb).length : k2 === "ch" ? o.ch.filter((c) => c.nb === nb).length : 0) : n)}</span></button>`).join("")}</div>
+        <div class="ofilters"><input type="search" id="orgQ" placeholder="Search names${isCh ? " and activities" : ""}" value="${esc(ORG.q)}" aria-label="Search the list">
+          ${isCh ? `<select id="orgTheme" aria-label="What it does">${opt(ORG.meta?.themes || [], ORG.theme, "Anything it does")}</select>
+          ${ORG.tab === "ch" ? `<select id="orgWho" aria-label="Who it helps">${opt(ORG.meta?.who || [], ORG.who, "Anyone it helps")}</select>` : ""}
+          <select id="orgSize" aria-label="Yearly income">${opt(SIZES.map((s) => [s[0], s[1]]), ORG.size, "Any size")}</select>` : ""}
+          <button type="button" class="linkbtn" id="orgCSV">⬇ Download (CSV)</button></div>
+        <p class="snote">${d3.format(",")(list.length)} ${isCh ? "charities" : "places"}${list.length > shown.length ? `; the largest ${shown.length} are shown (download for all)` : ""}.
+          ${isCh ? `Charities are placed in the neighbourhood of their registered postcode, which may be an office or a trustee's home, so no address is shown. ${ORG.tab === "wk" ? "These are charities on the England and Wales register, based in another council, that list this council (or its county) as somewhere they work." : ""} “What it does” is grouped by Which Places? from each register's own categories.` : "Schools are placed in the neighbourhood of their postcode."}</p>
+        <table class="gtable otable"><thead>${isCh ? `<tr><th>Charity</th><th class="num">Income</th><th>What it does</th><th>Neighbourhood</th></tr>` : `<tr><th>Name</th><th>Phase</th><th class="num">Pupils</th><th class="num">Free school meals</th><th>Neighbourhood</th></tr>`}</thead><tbody>${rowsH}</tbody></table>
+        <p class="snote">${isCh ? `From the registers of the Charity Commission for England and Wales, the Scottish Charity Regulator (OSCR) and the Charity Commission for Northern Ireland (November 2026), under the Open Government Licence. OSCR's register may not be used for direct marketing.` : `From Get Information about Schools (Department for Education, November 2026), the Welsh Government's address list of schools, the Scottish Government's school contact details (July 2026) and the Department of Education, Northern Ireland (2025/26). Open Government Licence.`}</p>
+      </div>`;
+      $("#orgBack").onclick = () => { state.orgs = false; render(); };
+      el.querySelectorAll(".otabs button").forEach((b) => (b.onclick = () => { ORG.tab = b.dataset.t; renderOrgs(); }));
+      const q = $("#orgQ"); let tmr = 0;
+      q.oninput = () => { clearTimeout(tmr); tmr = setTimeout(() => { ORG.q = q.value; renderOrgs(); setTimeout(() => { const i = $("#orgQ"); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 0); }, 250); };
+      [["orgTheme", "theme"], ["orgWho", "who"], ["orgSize", "size"]].forEach(([id, k2]) => { const s = $("#" + id); if (s) s.onchange = () => { ORG[k2] = s.value; renderOrgs(); }; });
+      el.querySelectorAll("[data-nb]").forEach((b) => (b.onclick = () => { state.orgs = false; nbLoad(r.iso3).then(() => selectNb(b.dataset.nb, true)); }));
+      $("#orgCSV").onclick = () => {
+        const src = `Sources: ${isCh ? "Charity Commission for England and Wales, OSCR, Charity Commission for Northern Ireland registers" : "DfE Get Information about Schools, Welsh Government, Scottish Government, Department of Education NI"} (Open Government Licence). From Which Places?, ${location.href.split("#")[0]}`;
+        const rowsC = isCh ? [["Name", "Register", "Charity number", "Latest income (£)", "Neighbourhood code", "Neighbourhood", "What it does (grouped)", "Who it helps (grouped)", "Register page"],
+          ...list.map((c) => [c.n, REG[c.r].name, c.id, c.inc, c.nb || "", c.nb ? nbName(c.nb) : "", c.t.map(themeName).join("; "), c.w.map(whoName).join("; "), REG[c.r].url(c.id)])]
+          : [["Name", "Type", "Phase", "Pupils", "Free school meals (%)", "Trust", "Neighbourhood code", "Neighbourhood", "Reference"], ...list.map((s) => [s.n, s.ty, s.k === "cc" ? "Children's centre" : s.ph, s.pu, s.fsm, s.tr || "", s.nb, nbName(s.nb), s.id])];
+        saveCSV(`${nb ? nbName(nb) : r.name} ${ORG.tab === "sc" ? "schools" : "charities"}`, [...rowsC, [], [src]]);
+      };
+      // names for neighbourhoods need the council's neighbourhood file
+      if (!NBH.tiles.has(r.iso3)) nbLoad(r.iso3).then(() => { if (state.orgs) renderOrgs(); });
+    });
+  }
+  // dots on the map: how many charities or schools each neighbourhood has
+  const gOrg = gRoot.insert("g", () => gDots.node()).attr("class", "orgdots");
+  function orgDots() {
+    const key = ORG.dots;
+    const la = state.selected;
+    if (!key || !la || state.view !== "map" || !NBH.tiles.has(la)) { gOrg.selectAll("*").remove(); return; }
+    orgLoad(la).then((o) => {
+      if (!o) return;
+      const counts = d3.rollup(key === "sc" ? o.sc : o.ch, (v) => v.length, (x) => x.nb);
+      const fs = NBH.tiles.get(la).fs.filter((f) => counts.get(f.properties.c));
+      const max = d3.max(fs, (f) => counts.get(f.properties.c)) || 1;
+      gOrg.selectAll("circle").data(fs, (f) => f.properties.c).join("circle")
+        .attr("cx", (f) => path.centroid(f)[0]).attr("cy", (f) => path.centroid(f)[1])
+        .attr("data-r0", (f) => 2 + 7 * Math.sqrt(counts.get(f.properties.c) / max))
+        .attr("r", (f) => (2 + 7 * Math.sqrt(counts.get(f.properties.c) / max)) / k)
+        .attr("data-nb", (f) => f.properties.c)
+        .attr("class", key === "sc" ? "odot sc" : "odot");
+    });
+  }
+
+  // ---------- Towns and cities (release 1.4) ----------
+  // towns.json: England and Wales's built-up areas of 5,000+ people, each made of the neighbourhoods that best fit it
+  let TOWNS = null, townsP = null;
+  function townsLoad() {
+    if (TOWNS) return Promise.resolve(TOWNS);
+    if (!townsP) townsP = loadJSON("towns.json").then((d) => {
+      TOWNS = { list: d.towns, est: new Set(d.est), by: new Map(d.towns.map((t) => [t.c, t])) };
+      // if someone is already typing, show towns in the search results too
+      const inp = $("#addInput");
+      if (inp && inp.value.trim() && document.activeElement === inp) inp.dispatchEvent(new Event("input"));
+      return TOWNS;
+    }).catch(() => null);
+    return townsP;
+  }
+  function openTown(code) {
+    townsLoad().then((T) => {
+      const t = T?.by.get(code);
+      if (!t) return;
+      state.town = code; state.selected = null; state.nb = null; state.orgs = false;
+      if (state.view !== "map") state.view = "map";
+      render();
+      Promise.all(t.la.map(nbLoad)).then((tiles) => {
+        const set = new Set(t.l);
+        const fs = tiles.filter(Boolean).flatMap((x) => x.fs.filter((f) => set.has(f.properties.c)));
+        if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.8);
+        nbUpdate();
+      });
+    });
+  }
+  function renderTown() {
+    const t = TOWNS.by.get(state.town), el = $("#results");
+    const la = byIso.get(t.la[0]), nation = la?.nation, gN = GROUPS.get("n:" + nation), gU = GROUPS.get("uk");
+    const est = (k2) => TOWNS.est.has(k2);
+    const fmtK = (k2, v) => (v == null ? "–" : k2 === "population" || k2 === "sc_n" || k2 === "ch_n" ? d3.format(",")(v) : k2 === "dep10" || k2 === "dep20" ? v + "%" : F[k2] ? fmtShort(F[k2], v) : String(v));
+    const label = (k2) => ({ population: "People", dep10: "Neighbourhoods in the most deprived 10%", dep20: "Neighbourhoods in the most deprived 20%", ch_n: "Charities based here", sc_n: "Schools" }[k2] || F[k2]?.label || k2);
+    const headK = ["population", "pct_0_15", "pct_65plus", "dep10", "ch_per1k", "c_no_car", "c_bad_health", "c_degree"].filter((k2) => t.v[k2] != null);
+    const cmpVal = (grp, k2) => (grp && grp.v[k2] != null ? fmtK(k2, grp.v[k2]) : "–");
+    const cards = headK.map((k2) => `<div class="scard"><div class="sk">${esc(F[k2]?.short || label(k2))}</div><div class="sv num">${est(k2) ? `<span class="approx" title="Worked out from its neighbourhoods">≈</span>` : ""}${esc(fmtK(k2, t.v[k2]))}</div>
+      <div class="sc">${k2 === "dep10" ? `Of its ${t.l.length} neighbourhoods` : k2 === "population" ? `${t.l.length} neighbourhoods` : `${esc(la.name)} <b>${esc(fmtK(k2, la[k2]))}</b> · ${esc(nation)} <b>${esc(cmpVal(gN, k2))}</b>`}</div></div>`).join("");
+    const cen = (NBH.meta?.census || []).filter((k2) => t.v[k2] != null && F[k2]);
+    const rowsT = cen.map((k2) => `<tr><td>${esc(F[k2].label)}</td><td class="num"><b>≈${esc(fmtK(k2, t.v[k2]))}</b></td><td class="num">${esc(fmtK(k2, la[k2]))}</td><td class="num">${esc(cmpVal(gN, k2))}</td><td class="num">${esc(cmpVal(gU, k2))}</td></tr>`).join("");
+    el.innerHTML = `<div class="detail townpage">
+      <h2>${esc(t.n)}</h2>
+      <p class="sub">Town or city (built-up area) · ${esc(nation)} · ${d3.format(",")(t.v.population)} people (mid-2024) · in ${t.la.map((c) => `<button type="button" class="linkbtn" data-la="${c}">${esc(byIso.get(c)?.name || c)}</button>`).join(", ")}</p>
+      <div class="scards">${cards}</div>
+      <p class="snote">≈ figures are worked out from the town's neighbourhoods (weighted by their population). The deprivation figure counts its neighbourhoods among the 10% most deprived in ${esc(nation)}.</p>
+      <table class="gtable nbtable"><thead><tr><th>Census</th><th class="num">${esc(t.n)}</th><th class="num">${esc(la.name)}</th><th class="num">${esc(nation)}</th><th class="num">UK</th></tr></thead><tbody>${rowsT}</tbody></table>
+      <p class="snote">Built-up areas are ONS's towns and cities (2022), made here from the neighbourhoods (LSOAs) that best fit each one, so edges are approximate. London is split into its boroughs' built-up areas, as ONS does. Towns in Scotland and Northern Ireland are not included yet.</p>
+      <p><button type="button" class="linkbtn" id="townCSV">⬇ Download these figures (CSV)</button></p>
+      <div class="nbnav"><button type="button" class="achip go" id="townClose">← Whole UK</button></div>
+    </div>`;
+    el.querySelectorAll("[data-la]").forEach((b) => (b.onclick = () => { state.town = null; selectArea(b.dataset.la); }));
+    $("#townClose").onclick = () => { state.town = null; goWholeUK(); render(); };
+    $("#townCSV").onclick = () => saveCSV(`${t.n} figures`, [["Measure", t.n, la.name, nation, "UK", "How the town figure was made"],
+      ...["population", "pct_0_15", "pct_65plus", "dep10", "dep20", "ch_n", "ch_per1k", "sc_n", ...cen].filter((k2) => t.v[k2] != null).map((k2) => [label(k2), t.v[k2], la[k2] ?? "", gN?.v[k2] ?? "", gU?.v[k2] ?? "", est(k2) ? "estimate from its neighbourhoods" : "added up from its neighbourhoods"]),
+      [], [`ONS built-up areas (2022) made from LSOAs; ONS population estimates; Census 2021; English IoD 2025 / WIMD 2025; charity registers. Open Government Licence. From Which Places?, ${location.href.split("#")[0]}`]]);
   }
 
   // ---------- Go to a nation or region ----------
@@ -1299,8 +1489,11 @@
     if (state.view !== "map") window.WV?.render();
     window.WMS?.refresh(); window.WST?.refresh(); window.WX?.refresh(); window.WCL?.draw(); window.WCG?.refresh(); window.WRG?.refresh();
     const chartList = state.view !== "map" && window.WV_H?.V?.list;
-    if (!state.selected) state.nb = null;
-    if (state.nb && NBH.rows.has(state.nb)) renderNb(); else if (state.selected) renderDetail(); else if (chartList) renderChartList(); else renderResults(matches, act, res);
+    if (!state.selected) { state.nb = null; state.orgs = false; }
+    if (state.selected) state.town = null;
+    if (state.town && TOWNS?.by.get(state.town)) renderTown();
+    else if (state.orgs && state.selected) renderOrgs();
+    else if (state.nb && NBH.rows.has(state.nb)) renderNb(); else if (state.selected) renderDetail(); else if (chartList) renderChartList(); else renderResults(matches, act, res);
     nbUpdate();
     document.body.classList.toggle("pane-hidden", state.view !== "map" && !!state.paneHidden);
     saveURL();
@@ -1790,7 +1983,7 @@
   function renderStarter(act) {
     const el = $("#starter");
     if (window.WQ) return window.WQ.renderCard(el);
-    el.hidden = !!state.filters.length || state.starterHidden || !!state.flow || (desk() && !!state.selected);
+    el.hidden = !!state.filters.length || state.starterHidden || !!state.flow || (desk() && (!!state.selected || !!state.town));
     if (el.hidden) return;
     const pz = todaysPuzzle();
     el.innerHTML = `
@@ -2100,7 +2293,7 @@
     if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.9);
   }
   function selectArea(iso, zoomIt = true) {
-    state.selected = iso; state.open = null; state.nb = null;
+    state.selected = iso; state.open = null; state.nb = null; state.orgs = false; state.town = null;
     if (state.view !== "map" && !desk()) state.view = "map";
     render();
     if (zoomIt) zoomToCountry(iso);
@@ -2437,6 +2630,7 @@
         <div class="abox"><h4>Neighbouring areas</h4><div class="achips">${nbs.length ? nbs.map(chip).join("") : `<span class="snote">None: it has no land border with another area.</span>`}</div></div>
         <div class="abox"><h4>Similar areas</h4><div class="achips">${sim.map(chip).join("")}</div><p class="snote">Closest on ${esc(HEADLINE().map((k) => (F[k].short || F[k].label).toLowerCase()).join(", "))}.</p></div>
         <div class="abox nbbox" id="nbSum"><h4>Neighbourhoods</h4><p class="snote">Loading…</p></div>
+        <div class="abox nbbox" id="orgSum"><h4>Charities and schools</h4><p class="snote">Loading…</p></div>
         <div class="abox"><h4>Show all the areas in</h4><div class="achips">${r.region !== r.nation ? `<button type="button" class="achip go" data-k="region" data-v="${esc(r.region)}">${esc(r.region)}</button>` : ""}<button type="button" class="achip go" data-k="nation" data-v="${esc(r.nation)}">${esc(r.nation)}</button>${r.city ? `<button type="button" class="achip go" data-k="city" data-v="${esc(r.city)}">${esc(r.city)}</button>` : ""}</div></div>
       </div></div>`;
   }
@@ -2482,7 +2676,7 @@
     zoomToGroup(k, v);
   }
   function bindAreaNav(el) {
-    if (state.selected) nbFillSummary(el, state.selected);
+    if (state.selected) { nbFillSummary(el, state.selected); orgFillSummary(el, state.selected); }
     el.querySelectorAll(".achip[data-iso]").forEach((b) => {
       b.onclick = () => selectArea(b.dataset.iso);
       b.onmouseenter = () => highlight(b.dataset.iso, true);
@@ -2496,6 +2690,15 @@
     if (!trail) return;
     const r = state.selected && byIso.get(state.selected);
     if (sel) sel.hidden = !!r;
+    const tw = !r && state.town && TOWNS?.by.get(state.town);
+    if (tw) {
+      const nat = byIso.get(tw.la[0])?.nation || "";
+      if (sel) sel.hidden = true;
+      trail.hidden = false;
+      trail.innerHTML = `<nav class="trail" aria-label="Where this town is"><button type="button" data-go="uk">United Kingdom</button><span class="sep" aria-hidden="true">›</span><button type="button" data-go="nation" data-v="${esc(nat)}">${esc(nat)}</button><span class="sep" aria-hidden="true">›</span><b>${esc(tw.n)}</b></nav>`;
+      trail.querySelectorAll("button[data-go]").forEach((b) => (b.onclick = () => { state.town = null; if (b.dataset.go === "uk") goWholeUK(); else showGroup("nation", b.dataset.v); render(); }));
+      return;
+    }
     if (!r) { trail.innerHTML = ""; trail.hidden = true; return; }
     trail.hidden = false;
     const order = lastListOrder.includes(r.iso3) ? lastListOrder : rows.filter((x) => x.sovereign).sort((a, b) => a.name.localeCompare(b.name)).map((x) => x.iso3);
@@ -2927,9 +3130,16 @@
       const qn = norm(q);
       const places = rows.filter((r) => norm(r.name).includes(qn))
         .map((r) => ({ r, s: norm(r.name).startsWith(qn) ? 2 : 1 })).sort((a, b) => b.s - a.s || a.r.name.localeCompare(b.r.name)).slice(0, 6);
+      const towns = TOWNS ? TOWNS.list.filter((t) => norm(t.n).includes(qn) && !places.some(({ r }) => norm(r.name) === norm(t.n) && false))
+        .map((t) => ({ t, s: norm(t.n).startsWith(qn) ? 2 : 1 })).sort((a, b) => b.s - a.s || b.t.v.population - a.t.v.population).slice(0, 5) : [];
+      if (!TOWNS) townsLoad();
       if (places.length) html += `<h4 class="rh">Places</h4>` + places.map(({ r }) => {
         items.push({ place: r.iso3 });
         return `<button type="button" role="option" class="item" data-i="${items.length - 1}"><span>${esc(r.name)}</span><span class="gtag">${esc(r.region === r.nation ? r.nation : r.region + ", " + r.nation)}</span></button>`;
+      }).join("");
+      if (towns.length) html += `<h4 class="rh">Towns and cities</h4>` + towns.map(({ t }) => {
+        items.push({ town: t.c });
+        return `<button type="button" role="option" class="item" data-i="${items.length - 1}"><span>${esc(t.n)}</span><span class="gtag">town or city · ${d3.format(",")(Math.round(t.v.population / 1000))}k people</span></button>`;
       }).join("");
     }
     if (fs.length) html += `<h4 class="rh">Filters</h4>` + fs.slice(0, 12).map(({ f }) => row(f, f.label)).join("");
@@ -3168,6 +3378,7 @@
   function choose(it) {
     if (!it) return;
     if (it.ask) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); window.WA.apply(it.ask); return; }
+    if (it.town) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); openTown(it.town); return; }
     if (it.postcode) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); goPostcode(it.postcode); return; }
     // a place: show its profile and zoom to it
     if (it.place) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); state.selected = it.place; state.open = null; if (state.view !== "map") state.view = "map"; render(); zoomToCountry(it.place); return; }
@@ -3181,6 +3392,8 @@
     render();
   }
   input.addEventListener("focus", openMenu);
+  input.addEventListener("focus", () => townsLoad(), { once: true });
+  setTimeout(() => townsLoad(), 2500);   // towns and cities: fetched soon after the page opens, ready for searching
   input.addEventListener("input", openMenu);
   input.addEventListener("blur", () => setTimeout(closeMenu, 120));
   input.addEventListener("keydown", (e) => {

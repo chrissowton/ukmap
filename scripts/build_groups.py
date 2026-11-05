@@ -27,6 +27,8 @@ import build_measures as BM   # noqa: E402
 import build_census as BC     # noqa: E402
 
 CHILD_W = {"child_pov_ahc", "child_pov_bhc", "child_obese", "ks2_rwm", "gcse_em", "early_years"}
+# per-person measures counted from every council: the population-weighted average is the exact figure for the group
+EXACT_PER_PERSON = {"ch_per1k", "ch_inc_pc"}
 WORK_W = {"claimant_rate", "employment_rate", "inactive", "unemployment", "job_density", "level3", "no_quals", "weekly_pay", "apprentices"}
 
 
@@ -105,7 +107,7 @@ def main():
                 official[g["id"]] = {**official.get(twin["id"], {}), **official.get(g["id"], {})}
 
     # ---------- every measure, for every group ----------
-    numeric = sorted({k for r in rows for k, v in r.items() if isinstance(v, (int, float)) and not k.endswith("_year") and k not in ("latlng",)})
+    numeric = sorted({k for r in rows for k, v in r.items() if isinstance(v, (int, float)) and not k.endswith("_year") and k not in ("latlng", "sc_n")})
     years = ts["years"]
     pop_ts = ts["series"].get("population", {})
 
@@ -150,7 +152,8 @@ def main():
                 # an estimate only if the councils with figures hold most of the group's people
                 if ws and wsum and wsum >= 0.8 * sum(weight(k, r) for r in mem):
                     v[k] = BM.rnd(sum(w * x for w, x in ws) / wsum)
-                    est.append(k)
+                    if k not in EXACT_PER_PERSON:
+                        est.append(k)
         v = {k: x for k, x in v.items() if x is not None}
         out.append({**{x: g[x] for x in ("id", "kind", "name") if x in g}, "nation": g.get("nation"), "members": g["members"], "v": v, "est": sorted(est)})
         print(f"{g['id']:52} {len(g['members']):3} councils  {len(v):3} measures  {sum(1 for k in src):3} official  {len(est):3} estimated")

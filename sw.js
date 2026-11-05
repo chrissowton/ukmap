@@ -4,7 +4,7 @@
    shows straight away; the saved copy is used only when offline. Data files are shown from the saved copy and
    checked for newer versions in the background.
    Change VERSION when you upload a new release, so old copies are cleared. */
-const VERSION = "wp-v8";
+const VERSION = "wp-v9";
 const CORE = ["./", "index.html", "style.css", "manifest.webmanifest", "icon-192.png"];
 
 self.addEventListener("install", (e) => {

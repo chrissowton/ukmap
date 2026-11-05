@@ -61,7 +61,7 @@ window.SDG_STATUS = [];
 
 window.FILTER_GROUPS = ["Places", "Population", "Age", "Money and work", "Housing", "Deprivation", "Health", "Wellbeing",
   "Education and skills", "Getting connected", "Services and culture", "Environment",
-  "Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning"];
+  "Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning", "Charities and schools"];
 // the measures on the cards at the top of each area's page (and used to find similar areas)
 window.HEADLINE = ["population", "median_age", "pct_65plus", "gdhi_pc", "child_pov_ahc", "claimant_rate", "life_exp_f", "dep_all"];
 
@@ -153,6 +153,21 @@ window.FILTERS = [
   }),
 ];
 
+// Charities (release 1.4): worked out on this site from the three charity registers
+window.FILTERS.push(
+  num("ch_per1k", "Charities and schools", "Charities based here per 1,000 people", {
+    short: "Charities per 1,000", step: 0.1, format: "dec1", source: "charities", year: "ch_per1k_year", yearText: "Nov 2026", scale: "log",
+    say: (b) => `charities based in the area per 1,000 people is ${b}`,
+    info: "Registered charities whose registered postcode is in the area, per 1,000 residents. Charities are counted where they are registered, which for big national charities is often a head office, so London and city centres score high; local reach is wider than this shows.",
+    keywords: "charities voluntary sector third sector civil society ngo",
+  }),
+  num("ch_inc_pc", "Charities and schools", "Charity income per person", {
+    short: "Charity income per person", step: 10, format: "gbp", source: "charities", year: "ch_inc_pc_year", yearText: "Nov 2026", scale: "log",
+    say: (b) => `the income of charities based in the area per resident is ${b}`,
+    info: "The latest yearly income of all registered charities based in the area, divided by its population. Head offices of large national charities push some areas very high.",
+    keywords: "charities income funding voluntary sector",
+  }),
+);
 window.SOURCES = {
   onsmye: {
     name: "ONS, NRS and NISRA mid-year population estimates (via ONS Explore Local Statistics)",
@@ -165,6 +180,7 @@ window.SOURCES = {
     licence: "Open Government Licence v3.0",
   },
   cityreg: { name: "Combined authorities and city regions as used by ONS Explore Local Statistics (November 2026); members listed in scripts/city_regions.json", url: "https://www.gov.uk/guidance/combined-authorities", licence: "Open Government Licence v3.0" },
+  charities: { name: "Charity Commission for England and Wales, Scottish Charity Regulator (OSCR) and Charity Commission for Northern Ireland registers (November 2026); counted on this site by registered postcode", url: "https://register-of-charities.charitycommission.gov.uk/", licence: "Open Government Licence v3.0" },
   myindex: { name: "Your own index, worked out on this site from the measures and weights you chose (each measure from its own source)", url: "#", licence: "—" },
 };
 
@@ -226,6 +242,7 @@ window.THEMES = [
   { id: "learning", label: "Education", groups: ["Education and skills"] },
   { id: "services", label: "Services", groups: ["Getting connected", "Services and culture"] },
   { id: "environment", label: "Environment", groups: ["Environment"] },
+  { id: "charities", label: "Charities", groups: ["Charities and schools"] },
   { id: "census", label: "Census", groups: ["Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning"] },
   { id: "places", label: "Places", groups: ["Places"] },
 ];

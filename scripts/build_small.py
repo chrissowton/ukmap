@@ -17,6 +17,7 @@ Inputs (not kept in this repository; see DATA-SOURCES.md):
   --dz21       Data Zone 2021 boundaries, GeoJSON (NISRA)
   --sape-ew    LSOA population estimates by single year of age, mid-2022 to mid-2024 (ONS)
   --sape-s     Small area population estimates, 2022 data zones, mid-2024 (NRS)
+  --mye-ni     Mid-year population estimates for data zones, mid-2024 (NISRA, MYE24_DZ.xlsx): totals only
   --imd        the IMD package (https://github.com/humaniverse/IMD): small-area deprivation for each nation
   --geographr  the geographr package (https://github.com/humaniverse/geographr): the ONS Postcode Directory (February 2025) and LSOA lookups
   --ew, --scot census tables, as for build_census.py
@@ -61,6 +62,7 @@ def main():
     ap = argparse.ArgumentParser()
     for k in ("lsoa", "dz22", "dz21", "sape-ew", "sape-s", "imd", "geographr", "ew", "scot"):
         ap.add_argument("--" + k, required=True)
+    ap.add_argument("--mye-ni", help="NISRA mid-year estimates for data zones (MYE24_DZ.xlsx): population totals")
     ap.add_argument("--out", default=ROOT)
     a = ap.parse_args()
     import pandas as pd
@@ -121,6 +123,13 @@ def main():
         if code in props:
             t, a0, a65, med = ages([float(v) for v in vals])
             props[code].update(p=int(round(t)), a0=a0, a65=a65, ma=med)
+    if a.mye_ni:
+        d = pd.read_excel(a.mye_ni, "Flat")
+        d = d[d["Year"] == d["Year"].max()]
+        for code, v in zip(d["Area_Code"], d["MYE"]):
+            if code in props:
+                props[code]["p"] = int(v)
+        print("Northern Ireland data zones: population mid-%d" % d["Year"].max())
     print("population: E&W mid-%d, Scotland mid-2024" % pop_year_ew)
 
     # ---------- deprivation ----------
@@ -223,7 +232,7 @@ def main():
     # how many small areas each index ranks (the rank's "out of")
     ranked = {"E": 33755, "W": 1917, "S": 6976, "N": 890}
     meta = {
-        "count": dict(nat), "withDeprivation": dict(deps), "popYear": {"E": pop_year_ew, "W": pop_year_ew, "S": 2024},
+        "count": dict(nat), "withDeprivation": dict(deps), "popYear": {"E": pop_year_ew, "W": pop_year_ew, "S": 2024, "N": 2024},
         "index": INDEX, "ranked": ranked, "census": ckeys,
         "names": {"E": "LSOA", "W": "LSOA", "S": "data zone", "N": "data zone"},
     }

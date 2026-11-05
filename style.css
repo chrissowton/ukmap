@@ -2735,3 +2735,27 @@ body.desk .tpanel .tp-body { columns: 2 260px; }
 /* "Whole UK" sits beside the map buttons on a laptop, leaving the top right for the neighbourhood key */
 body.desk .ukbtn { left: 54px; transform: none; }
 body.desk .nbctl { max-width: min(270px, calc(100% - 190px)); }
+
+/* release 1.4: charities, schools, towns */
+[data-g="charities-and-schools"] { --gc: var(--g-culture); }
+#map .orgdots circle.odot { fill: var(--accent); fill-opacity: .75; stroke: var(--surface); stroke-width: 1px; vector-effect: non-scaling-stroke; pointer-events: none; }
+#map .orgdots circle.odot.sc { fill: #2a78d6; }
+#map .nbs path.nb.outtown { opacity: .28; }
+#map .nbs path.nb.intown { stroke: var(--ink); stroke-width: .6px; }
+.nbctl .nbdots { margin-top: 8px; }
+.orgpage h2 { font-size: 24px; margin: 10px 0 8px; }
+.otabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.otabs button { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; }
+.otabs button span { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.otabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.otabs button[aria-selected="true"] span { color: #fff; opacity: .85; }
+.ofilters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.ofilters input[type="search"] { flex: 1 1 200px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.ofilters select { padding: 5px 8px; border-radius: 8px; font-size: 13px; }
+.otable td { vertical-align: top; }
+.otable .oa { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+.otable a { color: var(--ink); font-weight: 500; }
+.townpage .sub .linkbtn { font-size: inherit; }
+.otable th, .otable td, .nbtable th { font-family: var(--body); }
+.otable th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; }
+.otable th.num { text-align: right; }
