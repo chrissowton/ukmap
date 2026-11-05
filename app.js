@@ -4,7 +4,7 @@
 
   // ---------- Load data ----------
   // ?v= makes browsers fetch fresh data after the site is updated (raise it in index.html too)
-  const DATA_VERSION = "12";
+  const DATA_VERSION = "13";
   // the single-file version carries its data compressed, and unpacks it first
   if (window.__READY__) await window.__READY__;
   const loadJSON = (url) => fetch(url + "?v=" + DATA_VERSION).then((r) => { if (!r.ok) throw new Error(url); return r.json(); });
@@ -249,6 +249,9 @@
     mm: { ck: "", from: null, to: null, pct: false, bx: "", by: "" },
     classes: "",          // how the colour key is split: "" smooth, or "equal" / "quantile" / "jenks" classes
     nClasses: 5,
+    ui: "explore",        // release 2.0: "explore" (a place and its page), "find" (filters and rankings) or "compare"
+    tray: [],             // places waiting to be compared (references like "a:E08000037")
+    areas: "auto",        // which areas are coloured: "auto" (councils, then a council's neighbourhoods), "la" or "nb"
   };
 
   // Swap each country's time-enabled values for the chosen year (or back to the latest).
@@ -650,15 +653,19 @@
   // leaving the rest of the screen to the panel. Returns true if the width changed.
   let mapWSet = 0;
   const FOOT_ROOM = 96;   // room kept under the map for the key and year card (laptop layout)
+  const TOP_ROOM = 52;    // room kept above it for the Whole UK and Layers buttons
+  // Release 2.0: the map is as wide as the place being shown needs. The UK is tall and narrow, so the whole UK gets a
+  // narrower map and a wider panel; most councils and city regions are roughly round, so they get a wider map.
+  let mapTarget = null;   // the features being shown (null: the whole UK)
   function fitMapWidth() {
     if (!desk()) return false;
-    const H = window.innerHeight;
-    const foot = $("#mapfoot");
-    const fp = FOOT_ROOM;
-    const b = d3.geoPath(d3.geoTransverseMercator().rotate(projection.rotate()).scale(1).translate([0, 0])).bounds(fcAll);
-    const ratio = (b[1][0] - b[0][0]) / (b[1][1] - b[0][1]);
-    const want = Math.round((H - 16 - fp) * ratio + 40);
-    const w = Math.round(Math.max(360, Math.min(want, window.innerWidth * 0.6, window.innerWidth - 540)));
+    const H = ($(".shell")?.getBoundingClientRect().height) || window.innerHeight;
+    const fp = FOOT_ROOM + TOP_ROOM;
+    const b = d3.geoPath(d3.geoTransverseMercator().rotate(projection.rotate()).scale(1).translate([0, 0])).bounds(mapTarget || fcAll);
+    const ratio = Math.max(0.3, (b[1][0] - b[0][0]) / Math.max(1e-9, b[1][1] - b[0][1]));
+    const want = Math.round((H - 16 - fp) * ratio + 48);
+    const W = window.innerWidth;
+    const w = Math.round(Math.max(380, W * 0.36, Math.min(want, W * (state.ui === "compare" ? 0.5 : 0.63), W - 470)));
     if (Math.abs(w - mapWSet) <= 3) return false;
     mapWSet = w;
     document.body.style.setProperty("--mapw", w + "px");
@@ -674,7 +681,7 @@
     const foot = desk() ? $("#mapfoot") : null;
     // a fixed space for the key card, so the map doesn't jump (and a zoomed-in view doesn't drift) when the card changes size
     const footPad = foot ? FOOT_ROOM : 0;
-    const padX = desk() ? 20 : Math.max(16, w * 0.025), top = Math.max(16, mapTopPad), bottom = Math.max(16, footPad), left = Math.max(padX, mapLeftPad);
+    const padX = desk() ? 20 : Math.max(16, w * 0.025), top = Math.max(desk() ? TOP_ROOM - 6 : 16, mapTopPad), bottom = Math.max(16, footPad), left = Math.max(padX, mapLeftPad);
     const fc = fcAll;
     projection.fitExtent([[left, top], [w - padX, Math.max(top + 120, h - bottom)]], fc);
     if (mapBottomPad > 0) {
@@ -738,6 +745,7 @@
     gLabels.selectAll("circle").attr("r", (d) => (d.c?.city_capital ? 3 : 2.2) / k);
     scheduleLabels();
     gRoot.attr("transform", e.transform);
+    gPop.attr("display", k > 1.6 ? "none" : null);
     window.WX?.zoomed(e.transform.k); window.WCL?.draw(); window.WCG?.draw();
     gDots.selectAll("circle").attr("r", 4.2 / k);
     gCities.selectAll("circle").attr("r", (d) => cityR(d) / k);
@@ -750,7 +758,7 @@
   svg.call(zoom).on("dblclick.zoom", null);
   $("#zin").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1.6);
   $("#zout").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1 / 1.6);
-  $("#zreset").onclick = () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+  $("#zreset").onclick = () => { mapTarget = null; if (fitMapWidth()) layout(); svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity); };
   // "Whole UK": shown whenever the map is zoomed in or an area is open; takes you back to the whole country
   const ukBtn = document.createElement("button");
   ukBtn.type = "button"; ukBtn.id = "ukBtn"; ukBtn.className = "ukbtn"; ukBtn.hidden = true;
@@ -759,7 +767,9 @@
   $("#mapstage").appendChild(ukBtn);
   function showUkBtn() { const b = document.getElementById("ukBtn"); if (b) b.hidden = !(k > 1.02 || (desk() && (state.selected || state.town || state.places.length))); }
   function goWholeUK() {
-    if (state.selected || state.town || state.places.length || state.draw) { state.selected = null; state.town = null; state.places = []; state.draw = null; render(); }
+    mapTarget = null;
+    if (fitMapWidth()) layout();
+    if (state.selected || state.town || state.places.length || state.draw || state.nb) { state.selected = null; state.town = null; state.nb = null; state.places = []; state.draw = null; render(); }
     const g = $("#goTo"); if (g) g.value = "";
     svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
   }
@@ -780,6 +790,17 @@
   const nbCtl = document.createElement("div");
   nbCtl.id = "nbCtl"; nbCtl.className = "card nbctl"; nbCtl.hidden = true;
   $("#mapstage").appendChild(nbCtl);
+  // the bar of buttons at the top of the map (release 2.0): Whole UK and Layers
+  const mapbar = document.createElement("div");
+  mapbar.id = "mapbar"; mapbar.className = "mapbar";
+  $("#mapstage").appendChild(mapbar);
+  mapbar.appendChild(ukBtn);
+  const lyBtn = document.createElement("button");
+  lyBtn.type = "button"; lyBtn.id = "lyBtn"; lyBtn.className = "ukbtn lybtn"; lyBtn.setAttribute("aria-expanded", "false"); lyBtn.setAttribute("aria-controls", "nbCtl");
+  lyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 1.5 5.5 8 9l6.5-3.5zM1.5 8.5 8 12l6.5-3.5M1.5 11.3 8 14.8l6.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>Layers`;
+  lyBtn.onclick = (e) => { e.stopPropagation(); nbCtl.hidden = !nbCtl.hidden; lyBtn.setAttribute("aria-expanded", String(!nbCtl.hidden)); renderLayers(); };
+  mapbar.appendChild(lyBtn);
+  document.addEventListener("click", (e) => { if (!nbCtl.hidden && !nbCtl.contains(e.target) && !lyBtn.contains(e.target)) { nbCtl.hidden = true; lyBtn.setAttribute("aria-expanded", "false"); } });
   function nbLoad(la) {
     if (NBH.tiles.has(la)) return Promise.resolve(NBH.tiles.get(la));
     if (NBH.loading.has(la)) return NBH.loading.get(la);
@@ -805,12 +826,15 @@
   let geoBounds = null;
   function nbWanted() {
     const want = new Set();
+    if (state.areas === "la") return [];
     if (state.selected && state.view === "map") want.add(state.selected);
     if (state.town && state.view === "map" && TOWNS?.by.get(state.town)) TOWNS.by.get(state.town).la.forEach((c) => want.add(c));
     if (state.places.length === 1 && state.places[0][0] === "u" && myArea(state.places[0].slice(2))) myArea(state.places[0].slice(2)).las.forEach((c) => want.add(c));
     if (state.draw) state.draw.nbs.forEach((c) => { const p2 = NBH.rows.get(c); if (p2) want.add(p2.la); });
-    if (state.places.length && state.view === "map") { const mem = state.places.flatMap((r2) => placeData(r2)?.members || []); if (mem.length <= 12) mem.forEach((c) => want.add(c)); }
-    if (k >= 7 && state.view === "map") {
+    // nations, regions and city regions show their councils coloured; councils and towns being compared show neighbourhoods
+    if (state.places.length && state.view === "map") { const mem = state.places.filter((r2) => !desk() || "atu".includes(r2[0])).flatMap((r2) => placeData(r2)?.members || []); if (mem.length <= 12) mem.forEach((c) => want.add(c)); }
+    // zoomed in: every council in view, unless a place is open (then only its own neighbourhoods are coloured)
+    if (state.view === "map" && (state.areas === "nb" ? k >= 2.2 : k >= 7 && !(desk() && placeOpen()))) {
       if (!geoBounds) geoBounds = geo.filter((d) => d.rec).map((d) => [d.id, path.bounds(d)]);
       const t = d3.zoomTransform(svg.node()), vb = svg.attr("viewBox").split(" ").map(Number);
       const x0 = -t.x / t.k, y0 = -t.y / t.k, x1 = (vb[2] - t.x) / t.k, y1 = (vb[3] - t.y) / t.k;
@@ -856,11 +880,19 @@
       .style("fill", (d) => sc.col(d.properties[sc.key]));
     gNb.selectAll("path.on").raise();
     gNbLine.selectAll("path").data(NBH.drawn, (t) => t.la).join("path").attr("class", "nbline").attr("d", (t) => path(t.outline));
-    nbCtl.hidden = !fs.length;
-    if (fs.length) nbControl(sc);
+    renderNbKey(sc, fs.length);
+    renderLayers();
     orgDots();
   }
-  function nbControl(sc) {
+  // the key for the neighbourhoods, in the card under the map (release 2.0)
+  function renderNbKey(sc, on) {
+    let el = $("#nbKey");
+    const foot = $("#mapfoot");
+    if (!el && foot) { el = document.createElement("div"); el.id = "nbKey"; el.className = "nbkeyrow"; foot.prepend(el); }
+    if (!el) return;
+    el.hidden = !on;
+    document.body.classList.toggle("nb-on", !!on);
+    if (!on) return;
     const cen = (NBH.meta?.census || []).filter((k2) => F[k2]);
     const opts = `<optgroup label="Deprivation (1 = most deprived 10%)">${Object.entries(NB_DECILE).map(([k2, l]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</optgroup>
       <optgroup label="People">${Object.entries(NB_OTHER).map(([k2, [l]]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</optgroup>
@@ -868,15 +900,40 @@
       ${(NBH.meta?.extra || []).length ? `<optgroup label="Crime, per 1,000 residents a year (England and Wales)">${NBH.meta.extra.filter((k2) => F[k2]).map((k2) => `<option value="${k2}">${esc(F[k2].label)}</option>`).join("")}</optgroup>` : ""}`;
     const legend = sc.kind === "decile"
       ? `<div class="nbkey"><span>Most deprived</span>${d3.range(1, 11).map((v) => `<i style="background:${sc.col(v)}" title="Decile ${v}"></i>`).join("")}<span>Least</span></div>`
-      : sc.kind === "quint" ? `<div class="nbkey">${sc.ramp.map((c, i) => `<i style="background:${c}" title="${i === 0 ? `up to ${nbFmt(sc.key, sc.breaks[0])}` : i === 4 ? `${nbFmt(sc.key, sc.breaks[3])} and over` : `${nbFmt(sc.key, sc.breaks[i - 1])} to ${nbFmt(sc.key, sc.breaks[i])}`}"></i>`).join("")}</div>
-        <p class="nbnote">${esc(nbFmt(sc.key, sc.lo))} to ${esc(nbFmt(sc.key, sc.hi))}: five equal groups of the neighbourhoods shown</p>` : "";
-    nbCtl.innerHTML = `<label class="nbsel"><span>Neighbourhoods</span><select id="nbShade" aria-label="Shade neighbourhoods by">${opts}</select></label>${legend}
-      <fieldset class="nblayers"><legend>Show on the map</legend>${LAYERS.filter(([key]) => (key !== "my" || MYDATA?.matched) && hasKind(key)).map(([key, l, col]) => `<label><input type="checkbox" data-layer="${key}" ${ORG.layers.has(key) ? "checked" : ""}><i style="background:${col}"></i>${esc(l)}</label>`).join("")}
-        <p class="nbnote">Dots show how many are in each neighbourhood (charities by registered postcode). GP practices and pharmacies are NHS lists for England (and Welsh GP practices)${FAC_META?.osm ? ", with OpenStreetMap filling in elsewhere; places from OpenStreetMap © OpenStreetMap contributors, and may be incomplete" : ""}.</p></fieldset>`;
-    nbCtl.querySelectorAll("[data-layer]").forEach((cb) => (cb.onchange = () => { cb.checked ? ORG.layers.add(cb.dataset.layer) : ORG.layers.delete(cb.dataset.layer); orgDots(); }));
-    const s = nbCtl.querySelector("#nbShade");
-    s.value = NBH.shade;
-    s.onchange = () => { NBH.shade = s.value; nbDraw(); if (state.nb) renderNb(); };
+      : sc.kind === "quint" ? `<div class="nbkey"><span class="num">${esc(nbFmt(sc.key, sc.lo))}</span>${sc.ramp.map((c, i) => `<i style="background:${c}" title="${i === 0 ? `up to ${nbFmt(sc.key, sc.breaks[0])}` : i === 4 ? `${nbFmt(sc.key, sc.breaks[3])} and over` : `${nbFmt(sc.key, sc.breaks[i - 1])} to ${nbFmt(sc.key, sc.breaks[i])}`}"></i>`).join("")}<span class="num">${esc(nbFmt(sc.key, sc.hi))}</span></div>
+        <p class="nbnote">Five equal groups of the neighbourhoods shown</p>` : `<p class="nbnote">No figures for these neighbourhoods.</p>`;
+    el.innerHTML = `<div class="lrow ltitle"><span class="lwhat">Neighbourhoods</span><select id="nbShade" aria-label="Colour the neighbourhoods by">${opts}</select></div>${legend}`;
+    const s2 = el.querySelector("#nbShade");
+    s2.value = NBH.shade;
+    s2.onchange = () => { NBH.shade = s2.value; nbDraw(); if (state.nb) renderNb(); saveURL(); };
+  }
+  // the Layers box: which areas are coloured, and which places are shown as dots (release 2.0)
+  const MAX_LAYERS = 3;
+  function renderLayers() {
+    if (nbCtl.hidden) return;
+    const names = $("#zlabels")?.getAttribute("aria-pressed") !== "false";
+    const radio = (v, l, sub) => `<label class="lp-radio"><input type="radio" name="lpAreas" value="${v}" ${state.areas === v ? "checked" : ""}><span><b>${esc(l)}</b><small>${esc(sub)}</small></span></label>`;
+    nbCtl.innerHTML = `<div class="lp-head"><h3>Map layers</h3><button type="button" class="iconbtn" id="lpX" aria-label="Close">×</button></div>
+      <div class="lp-step"><h4><span>1</span>Areas to colour</h4>
+        ${radio("auto", "Automatic", "Councils; a council's neighbourhoods when you open it or zoom in")}
+        ${radio("la", "Councils only", "Never show neighbourhoods")}
+        ${radio("nb", "Neighbourhoods", "Shown as soon as you zoom in a little")}</div>
+      <div class="lp-step"><h4><span>2</span>Colour by</h4><p class="nbnote">Choose the measure in the key at the bottom of the map. Councils and neighbourhoods each have their own.</p></div>
+      <div class="lp-step"><h4><span>3</span>Places on the map <small>up to ${MAX_LAYERS}</small></h4>
+        <div class="lp-checks">${LAYERS.filter(([key]) => (key !== "my" || MYDATA?.matched) && hasKind(key)).map(([key, l, col]) => `<label><input type="checkbox" data-layer="${key}" ${ORG.layers.has(key) ? "checked" : ""}><i style="background:${col}"></i>${esc(l)}</label>`).join("")}</div>
+        <p class="nbnote">Dots show how many are in each neighbourhood (never an address), when neighbourhoods are on the map. GP practices and pharmacies are NHS lists for England (and Welsh GP practices)${FAC_META?.osm ? "; other places from OpenStreetMap © OpenStreetMap contributors, which may be incomplete" : ""}.</p><p class="nbnote lp-max" hidden>Up to ${MAX_LAYERS} at once, so the map stays readable. Untick one first.</p></div>
+      <div class="lp-step lp-more"><label class="lp-names"><input type="checkbox" id="lpNames" ${names ? "checked" : ""}> Place names, rivers and hills</label>
+        <button type="button" class="linkbtn" id="lpStyle">More map styles: change over time, two measures at once…</button></div>`;
+    nbCtl.querySelector("#lpX").onclick = () => { nbCtl.hidden = true; $("#lyBtn")?.setAttribute("aria-expanded", "false"); };
+    nbCtl.querySelectorAll("input[name=lpAreas]").forEach((r2) => (r2.onchange = () => { state.areas = r2.value; NBH.drawn = []; nbUpdate(); render(); }));
+    nbCtl.querySelectorAll("[data-layer]").forEach((cb) => (cb.onchange = () => {
+      if (cb.checked && ORG.layers.size >= MAX_LAYERS) { cb.checked = false; nbCtl.querySelector(".lp-max").hidden = false; return; }
+      cb.checked ? ORG.layers.add(cb.dataset.layer) : ORG.layers.delete(cb.dataset.layer);
+      nbCtl.querySelector(".lp-max").hidden = true;
+      orgDots(); saveURL();
+    }));
+    nbCtl.querySelector("#lpNames").onchange = () => $("#zlabels")?.click();
+    nbCtl.querySelector("#lpStyle").onclick = () => { nbCtl.hidden = true; $("#mmBtn")?.click(); };
   }
   function nbTip(evt, code) {
     const p = NBH.rows.get(code);
@@ -896,6 +953,8 @@
     render();
     if (zoomIt) {
       const f = NBH.tiles.get(p.la)?.fs.find((x) => x.properties.c === code);
+      const g = geo.find((d) => d.id === p.la);
+      if (f && desk() && g) { mapTarget = { type: "FeatureCollection", features: [g] }; if (fitMapWidth()) layout(); }
       if (f) zoomTo(path.bounds(f), 0.25);
     }
   }
@@ -1020,11 +1079,12 @@
   // based elsewhere that say they work there (England and Wales register), and schools and children's centres.
   const ORG = { files: new Map(), loading: new Map(), meta: null, tab: "ch", q: "", theme: "", who: "", size: "", kind: "", layers: new Set() };
   // map layers that can be switched on and off: dots sized by how many there are in each neighbourhood
-  const LAYERS = [["ch", "Charities", "#c2410c"], ["sc", "Schools", "#2a78d6"], ["cc", "Children's centres", "#7c3aed"],
-    ["gp", "GP practices", "#0f9d58"], ["pharmacy", "Pharmacies", "#d81b60"], ["foodbank", "Food banks", "#f59e0b"],
-    ["leisure", "Sports and leisure centres", "#0891b2"], ["community", "Community centres", "#65a30d"], ["library", "Libraries", "#7c2d12"],
-    ["social", "Care and social services", "#be185d"], ["bank", "Banks and post offices", "#475569"], ["playground", "Playgrounds", "#ca8a04"],
-    ["worship", "Places of worship", "#6d28d9"], ["my", "Your data", "#111827"]];
+  // dot colours chosen to stand out from the yellow-orange-brown colours of the areas
+  const LAYERS = [["ch", "Charities", "#1d4ed8"], ["sc", "Schools", "#0f766e"], ["cc", "Children's centres", "#7c3aed"],
+    ["gp", "GP practices", "#059669"], ["pharmacy", "Pharmacies", "#db2777"], ["foodbank", "Food banks", "#111827"],
+    ["leisure", "Sports and leisure centres", "#0891b2"], ["community", "Community centres", "#4d7c0f"], ["library", "Libraries", "#4338ca"],
+    ["social", "Care and social services", "#be185d"], ["bank", "Banks and post offices", "#475569"], ["playground", "Playgrounds", "#16a34a"],
+    ["worship", "Places of worship", "#6d28d9"], ["my", "Your data", "#e11d48"]];
   const FAC_KINDS = { gp: "GP practice", pharmacy: "Pharmacy", foodbank: "Food bank", leisure: "Sports or leisure centre", community: "Community centre",
     library: "Library", social: "Care or social service", bank: "Bank or post office", playground: "Playground", worship: "Place of worship" };
   // which kinds of place this release has (places from OpenStreetMap are added a few kinds at a time)
@@ -1172,10 +1232,12 @@
   function orgDots() {
     // the councils whose neighbourhoods are on the map and in focus (at most 12, so the map stays quick)
     const foc = focusSet();
-    const las = NBH.drawn.map((t) => t.la).filter((la) => !foc || foc.has(la)).slice(0, 12);
+    const twn = state.town && TOWNS?.by.get(state.town);
+    const las = NBH.drawn.map((t) => t.la).filter((la) => (twn ? twn.la.includes(la) : !foc || foc.has(la))).slice(0, 12);
+    document.body.classList.toggle("dots-on", !!ORG.layers.size && !!las.length);
     if (!ORG.layers.size || state.view !== "map" || !las.length) { gOrg.selectAll("*").remove(); return; }
     Promise.all(las.map(orgLoad)).then((files) => {
-      const pts = [];
+      const pts = [], tset = state.town && TOWNS?.by.get(state.town) ? new Set(TOWNS.by.get(state.town).l) : null;
       LAYERS.forEach(([key, , col], li) => {
         if (!ORG.layers.has(key)) return;
         files.forEach((o, i) => {
@@ -1184,7 +1246,7 @@
           if (!tile) return;
           const items = key === "ch" ? o.ch : key === "sc" || key === "cc" ? o.sc.filter((s2) => (key === "cc" ? s2.k === "cc" : s2.k === "school")) : key === "my" ? [] : o.fac.filter((f2) => f2.k === key);
           const counts = key === "my" ? (MYDATA?.matched || new Map()) : d3.rollup(items, (v) => v.length, (x) => x.nb);
-          tile.fs.forEach((f) => { const n = counts.get(f.properties.c); if (n) pts.push({ id: key + f.properties.c, f, n, key, col, li }); });
+          tile.fs.forEach((f) => { if (tset && !tset.has(f.properties.c)) return; const n = counts.get(f.properties.c); if (n) pts.push({ id: key + f.properties.c, f, n, key, col, li }); });
         });
       });
       const max = d3.rollup(pts, (v) => d3.max(v, (p) => p.n), (p) => p.key);
@@ -1225,7 +1287,7 @@
       Promise.all(t.la.map(nbLoad)).then((tiles) => {
         const set = new Set(t.l);
         const fs = tiles.filter(Boolean).flatMap((x) => x.fs.filter((f) => set.has(f.properties.c)));
-        if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.8);
+        if (fs.length) showOnMap(fs, 0.85);
         nbUpdate();
       });
     });
@@ -1313,22 +1375,24 @@
   }
   function zoomToPlaces() {
     const mem = new Set(state.places.flatMap((r2) => placeData(r2)?.members || []));
-    const fs = geo.filter((d) => mem.has(d.id) && !insetFor(d.id));
-    if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.85);
+    let fs = geo.filter((d) => mem.has(d.id) && !insetFor(d.id));
+    if (!fs.length) fs = geo.filter((d) => mem.has(d.id));
+    if (fs.length) showOnMap(fs, 0.9);
   }
   // the councils in focus: the rest of the map is shown faded
   function focusSet() {
     if (state.places.length) return new Set(state.places.flatMap((r2) => placeData(r2)?.members || []));
-    if (state.town && TOWNS?.by.get(state.town)) return new Set(TOWNS.by.get(state.town).la);
+    if (state.town && TOWNS?.by.get(state.town)) return desk() ? new Set() : new Set(TOWNS.by.get(state.town).la);
     if (state.selected && desk()) return new Set([state.selected]);
     return null;
   }
   // the picker: first the kind of place, then the place itself (type to search)
+  let PPEL = null;   // the picker, kept so it can be moved into the compare page (and back) as pages are redrawn
   (function placePicker() {
     const bar = $(".bar");
     if (!bar || $("#placePick")) return;
     const box = document.createElement("div");
-    box.id = "placePick"; box.className = "placepick";
+    box.id = "placePick"; box.className = "placepick"; PPEL = box;
     box.innerHTML = `<select id="ppType" aria-label="Kind of place"><option value="">Choose a place…</option>${PLACE_TYPES.map(([k2, l]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</select>
       <input id="ppName" type="text" list="ppList" placeholder="First choose the kind of place" aria-label="Place" disabled autocomplete="off"><datalist id="ppList"></datalist>
       <button type="button" id="ppGo" class="ppgo" disabled>Show</button><button type="button" id="ppAdd" class="ppadd" disabled title="Add to the places you are comparing">+ Compare</button>
@@ -1353,7 +1417,12 @@
     name.onkeydown = (e) => { if (e.key === "Enter") { const o = pick(); if (o) { e.preventDefault(); setPlaces([o.ref]); name.value = ""; } } };
     name.onchange = () => { const o = opts.find((x) => x.name === name.value); if (o) { setPlaces([o.ref]); name.value = ""; } };
     box.querySelector("#ppGo").onclick = () => { const o = pick(); if (o) { setPlaces([o.ref]); name.value = ""; } };
-    box.querySelector("#ppAdd").onclick = () => { const o = pick(); if (o) { addPlace(o.ref); name.value = ""; } };
+    box.querySelector("#ppAdd").onclick = () => {
+      const o = pick(); if (!o) return; name.value = "";
+      if (!desk()) { addPlace(o.ref); return; }
+      if (!state.tray.includes(o.ref)) state.tray = [...state.tray, o.ref].slice(-6);
+      if (state.ui === "compare" && state.tray.length >= 2) setPlaces(state.tray); else render();
+    };
   })();
   // tools for whatever place is being shown: print a report, write a note, make your own area
   const ptools = document.createElement("div");
@@ -1397,7 +1466,7 @@
     el.innerHTML = `<div class="detail placepage">${groupPageHTML(p.group)}
       <table class="gtable nbtable"><thead><tr><th>Council</th>${ks.map((k2) => `<th class="num">${esc(F[k2].short || F[k2].label)}</th>`).join("")}</tr></thead>
       <tbody>${mem.map((r) => `<tr><td><button type="button" class="linkbtn" data-iso="${r.iso3}">${esc(r.name)}</button></td>${ks.map((k2) => `<td class="num">${r[k2] != null ? esc(fmtShort(F[k2], r[k2])) : "–"}</td>`).join("")}</tr>`).join("")}</tbody></table>
-      <p class="snote">To compare ${esc(p.name)} with somewhere else, choose another place above and press “+ Compare”.</p></div>`;
+      <p class="snote">To compare ${esc(p.name)} with somewhere else, press “+ Compare” at the top, then find the other place.</p></div>`;
     el.querySelectorAll("button[data-iso]").forEach((b) => (b.onclick = () => selectArea(b.dataset.iso)));
   }
   // two or more places side by side
@@ -1417,15 +1486,17 @@
       const ks = keysAll.filter((f) => t.groups.includes(f.group) && !head.includes(f.key)).map((f) => f.key);
       return ks.length ? `<tr class="gth"><th colspan="${ps.length + 2}">${esc(t.label)}</th></tr>` + ks.map(row).join("") : "";
     }).join("");
+    if (desk()) state.tray = [...state.places];
     el.innerHTML = `<div class="detail comparepage">
       <h2>Comparing ${ps.length} places</h2>
-      <p class="sub">${ps.map((p) => `${esc(p.name)} <span class="yr">(${esc(p.kind)})</span>`).join(" · ")}</p>
+      ${desk() ? cmpPickerHTML() : `<p class="sub">${ps.map((p) => `${esc(p.name)} <span class="yr">(${esc(p.kind)})</span>`).join(" · ")}</p>`}
       <div class="cmpwrap"><table class="gtable nbtable cmptable"><thead><tr><th>Measure</th>${ps.map((p) => `<th class="num"><button type="button" class="linkbtn" data-open="${esc(p.ref)}">${esc(p.name)}</button></th>`).join("")}<th class="num">UK</th></tr></thead>
         <tbody><tr class="gth"><th colspan="${ps.length + 2}">Headlines</th></tr>${head.map(row).join("")}${themes}</tbody></table></div>
       <p class="snote">Figures for each whole place. <b>Bold</b> marks the highest and <span class="lo-key">underline</span> the lowest of the places you chose (higher is not always better). ≈ marks figures worked out from councils or neighbourhoods. Measures marked “within nation” (deprivation, new homes, apprenticeships) are made differently in each nation, so compare them only between places in the same nation. Towns' deprivation is the share of their neighbourhoods in the nation's most deprived 10%.</p>
       <p><button type="button" class="linkbtn" id="cmpCSV">⬇ Download this comparison (CSV)</button></p>
     </div>`;
     el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => setPlaces([b.dataset.open])));
+    if (desk()) bindCmpPicker(el);
     $("#cmpCSV").onclick = () => saveCSV(`Comparing ${ps.map((p) => p.name).join(" ")}`, [["Measure", "Period", ...ps.map((p) => p.name), "UK"],
       ...[...head, ...keysAll.map((f) => f.key).filter((k2) => !head.includes(k2))].map((k2) => [F[k2].label, F[k2].yearText || "", ...ps.map((p) => (p.v[k2] == null ? "" : (p.est.has(k2) ? "~" : "") + p.v[k2])), F[k2].compare === "nation" ? "" : uk?.v[k2] ?? ""]),
       [], ["~ = estimate worked out from councils or neighbourhoods. Each figure keeps its source's licence (Open Government Licence v3.0). From Which Places?, " + location.href.split("#")[0]]]);
@@ -1928,11 +1999,13 @@
     return fs.length ? `<optgroup label="${esc(g)}">${fs.map((f) => `<option value="${f.key}" ${selected === f.key ? "selected" : ""}>${esc(f.label)}</option>`).join("")}</optgroup>` : "";
   }).join("");
   // Which number to shade matching countries by: the user's choice, else the last number filter added
+  // with no filters, the map is still coloured (on a laptop), by child poverty unless another measure is chosen
+  const DEFAULT_COLOUR = "child_pov_ahc";
   function colourKey() {
     if (state.colourBy === "none") return null;
     if (state.colourBy) return state.colourBy;
     const nums = active().filter((fl) => F[fl.key].type === "range");
-    return nums.length ? nums[nums.length - 1].key : null;
+    return nums.length ? nums[nums.length - 1].key : desk() && F[DEFAULT_COLOUR] ? DEFAULT_COLOUR : null;
   }
   function colourScale(matches) {
     const key = colourKey();
@@ -2009,6 +2082,11 @@
   // ---------- Render ----------
   let lastCS = null, lastMatches = [];
   function render(opts = {}) {
+    // release 2.0: Explore (a place), Find places (filters, rankings, charts) or Compare
+    if (state.places.length >= 2) state.ui = "compare";
+    else if (placeOpen()) state.ui = "explore";
+    if (desk() && state.ui !== "find" && state.view !== "map") state.view = "map";
+    document.body.dataset.ui = state.ui;
     lastEval = evaluate();
     const { act, res } = lastEval;
     const matches = pool().filter((r) => res.get(r.iso3).match).sort((a, b) => a.name.localeCompare(b.name));
@@ -2068,6 +2146,8 @@
     const chartList = state.view !== "map" && window.WV_H?.V?.list;
     if (!state.selected) { state.nb = null; state.orgs = false; }
     if (state.selected) { state.town = null; state.places = []; }
+    renderModesBar();
+    renderTray();
     renderPlaceChips();
     if (state.mydata) renderMyData();
     else if (state.draw) renderDraw();
@@ -2076,7 +2156,10 @@
     else if (state.places.length === 1) renderPlace();
     else if (state.town && TOWNS?.by.get(state.town)) renderTown();
     else if (state.orgs && state.selected) renderOrgs();
-    else if (state.nb && NBH.rows.has(state.nb)) renderNb(); else if (state.selected) renderDetail(); else if (chartList) renderChartList(); else renderResults(matches, act, res);
+    else if (state.nb && NBH.rows.has(state.nb)) renderNb(); else if (state.selected) renderDetail();
+    else if (desk() && state.ui === "compare") renderCompareHome();
+    else if (desk() && state.ui === "explore") renderHome();
+    else if (chartList) renderChartList(); else renderResults(matches, act, res);
     nbUpdate();
     document.body.classList.toggle("pane-hidden", state.view !== "map" && !!state.paneHidden);
     saveURL();
@@ -2503,6 +2586,7 @@
   $("#legend").addEventListener("change", (e) => {
     if (e.target.matches(".lclass")) { state.classes = e.target.value; render(); }
     if (e.target.matches(".lncl")) { state.nClasses = +e.target.value; render(); }
+    if (e.target.matches(".lcolour")) { state.colourBy = e.target.value; render(); }
   });
   function renderLegend(cs, act) {
     const el = $("#legend");
@@ -2523,10 +2607,12 @@
       else if (act.length) h += `<div class="lrow"><span class="sw" style="background:var(--match)"></span>Matches every area filter</div>`;
       el.hidden = !h; el.innerHTML = h; return;
     }
-    if (!act.length && !showCities() && !state.popSized) { el.hidden = true; return; }
+    if (!act.length && !cs && !showCities() && !state.popSized) { el.hidden = true; return; }
     el.hidden = false;
     let h = state.popSized ? `<div class="lrow"><span class="sw city"></span>Circles sized by population</div>` : "";
-    if (cs) {
+    if (cs && desk()) {
+      h += `<div class="lrow ltitle"><span class="lwhat">Councils</span><select class="lcolour" aria-label="Colour the councils by">${measureOptions(cs.f.key)}</select>${state.year && cs.f.time ? `<span>${state.year}</span>` : ""}</div>` + rampHTML(cs);
+    } else if (cs) {
       h += `<div class="lrow"><span>${esc(cs.f.label)}${state.year && cs.f.time ? `, ${state.year}` : ""}</span></div>` + rampHTML(cs);
     } else if (act.length) {
       h += `<div class="lrow"><span class="sw" style="background:var(--match)"></span>Matches every filter</div>`;
@@ -2566,7 +2652,7 @@
   function renderStarter(act) {
     const el = $("#starter");
     if (window.WQ) return window.WQ.renderCard(el);
-    el.hidden = !!state.filters.length || state.starterHidden || !!state.flow || state.places.length > 0 || !!state.mydata || !!state.draw || (desk() && (!!state.selected || !!state.town));
+    el.hidden = (desk() && state.ui !== "find") || !!state.filters.length || state.starterHidden || !!state.flow || state.places.length > 0 || !!state.mydata || !!state.draw || (desk() && (!!state.selected || !!state.town));
     if (el.hidden) return;
     const pz = todaysPuzzle();
     el.innerHTML = `
@@ -2857,6 +2943,8 @@
     if (state.view !== "map" && !desk()) return;
     const g = geo.find((d) => d.rec?.iso3 === iso);
     if (!g) return;
+    // release 2.0: the council fills the map; its neighbours show faded round it
+    if (desk()) { showOnMap([g], 0.9); return; }
     // the UK site: the area with its neighbours, so you can see where it is
     const near = (NB.get(iso) || []).map((n) => geo.find((d) => d.id === n)).filter((d) => d && !insetFor(d.id));
     if (!insetFor(iso) && near.length) { zoomTo(path.bounds({ type: "FeatureCollection", features: [g, ...near] }), 0.85); return; }
@@ -2873,7 +2961,7 @@
   }
   function zoomToGroup(kind, name) {
     const fs = geo.filter((d) => d.rec && (kind === "nation" ? d.rec.nation === name : kind === "city" ? d.rec.city === name : d.rec.region === name) && !insetFor(d.id));
-    if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.9);
+    if (fs.length) showOnMap(fs, 0.92);
   }
   function selectArea(iso, zoomIt = true) {
     state.selected = iso; state.open = null; state.nb = null; state.orgs = false; state.town = null; state.mydata = false;
@@ -2882,14 +2970,23 @@
     if (zoomIt) zoomToCountry(iso);
     $("#results")?.scrollTo?.({ top: 0 });
   }
+  function showOnMap(fs, frac = 0.88) {
+    fs = (fs || []).filter(Boolean);
+    if (!fs.length) return;
+    const fc = { type: "FeatureCollection", features: fs };
+    if (desk()) { mapTarget = fc; if (fitMapWidth()) layout(); }
+    zoomTo(path.bounds(fc), frac);
+  }
   function zoomTo(b, frac = 0.8) {
     if (!b) return;
     const [[x0, y0], [x1, y1]] = b;
     const vb = svg.attr("viewBox").split(" ").map(Number);
     // the part of the map not covered by the quiz card
     const left = Math.min(mapLeftPad || 0, vb[2] * 0.5), visW = vb[2] - left;
-    const kk = Math.max(1, Math.min(14, frac / Math.max((x1 - x0) / visW, (y1 - y0) / vb[3])));
-    const tx = left + visW / 2 - kk * (x0 + x1) / 2, ty = vb[3] / 2 - kk * (y0 + y1) / 2;
+    // on a laptop, keep the place clear of the buttons at the top of the map and the key at the bottom
+    const top = desk() ? TOP_ROOM : 0, visH = vb[3] - top - (desk() ? FOOT_ROOM : 0);
+    const kk = Math.max(1, Math.min(desk() ? 36 : 14, frac / Math.max((x1 - x0) / visW, (y1 - y0) / visH)));
+    const tx = left + visW / 2 - kk * (x0 + x1) / 2, ty = top + visH / 2 - kk * (y0 + y1) / 2;
     svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(kk));
   }
   function footHTML() {
@@ -3247,9 +3344,9 @@
     return `<section class="gsum" aria-label="Figures for ${esc(g.name)}">
       <div class="gs-head"><div><h2>${esc(g.name)}</h2><p>${kind ? `${esc(kind)} · ` : ""}${g.members.length} council${g.members.length === 1 ? "" : "s"} · ${d3.format(",")(g.v.population)} people (mid-2025)</p></div></div>
       <div class="scards">${cards}</div>
-      <details class="gs-all"><summary>Every measure for ${esc(g.name)}${nat ? `, ${esc(nat.name)}` : ""} and the UK</summary>
+      <details class="gs-all"><summary>Every measure for ${g.kind === "uk" ? "the United Kingdom" : `${esc(g.name)}${nat ? `, ${esc(nat.name)}` : ""} and the UK`}</summary>
         <table class="gtable"><thead><tr><th>Measure</th><th class="num">${esc(g.name)}</th><th class="num">${nat ? esc(nat.name) : ""}</th><th class="num">UK</th></tr></thead><tbody>${themes}</tbody></table></details>
-      <p class="snote">Figures for the whole ${g.kind === "city" ? "city region" : g.kind}, not the typical council. Official figures where ONS publishes them; ≈ marks figures worked out from its councils (an average weighted by the people each measure is about), and census figures are added up from the counts. Deprivation, new homes and apprenticeships are compared within a nation only.</p>
+      <p class="snote">Figures for the whole ${g.kind === "city" ? "city region" : g.kind === "uk" ? "UK" : g.kind}, not the typical council. Official figures where ONS publishes them; ≈ marks figures worked out from its councils (an average weighted by the people each measure is about), and census figures are added up from the counts. Deprivation, new homes and apprenticeships are compared within a nation only.</p>
       <p><button type="button" class="linkbtn" data-csv="g|${esc(g.id)}">⬇ Download these figures (CSV, opens in Excel)</button></p>
       <h3 class="gs-list">Its councils</h3>
     </section>`;
@@ -3268,40 +3365,207 @@
     el.querySelectorAll(".achip.go").forEach((b) => (b.onclick = () => showGroup(b.dataset.k, b.dataset.v)));
   }
   // the breadcrumb above the panel: United Kingdom › nation › region › area, with previous and next
-  function renderCrumbs() {
-    const trail = $("#crumbTrail"), sel = $("#crumbSel");
-    if (!trail) return;
-    const r = state.selected && byIso.get(state.selected);
-    // the place picker stays visible under the trail, so another place can be added at any time
-    if (sel) { sel.hidden = false; sel.classList.toggle("withtrail", !!r || !!(state.town && TOWNS?.by.get(state.town))); }
-    const tw = !r && state.town && TOWNS?.by.get(state.town);
-    if (tw) {
-      const nat = byIso.get(tw.la[0])?.nation || "";
-      trail.hidden = false;
-      trail.innerHTML = `<nav class="trail" aria-label="Where this town is"><button type="button" data-go="uk">United Kingdom</button><span class="sep" aria-hidden="true">›</span><button type="button" data-go="nation" data-v="${esc(nat)}">${esc(nat)}</button><span class="sep" aria-hidden="true">›</span><b>${esc(tw.n)}</b></nav>`;
-      trail.querySelectorAll("button[data-go]").forEach((b) => (b.onclick = () => { state.town = null; if (b.dataset.go === "uk") goWholeUK(); else showGroup("nation", b.dataset.v); render(); }));
-      return;
-    }
-    if (!r) { trail.innerHTML = ""; trail.hidden = true; return; }
-    trail.hidden = false;
-    const order = lastListOrder.includes(r.iso3) ? lastListOrder : rows.filter((x) => x.sovereign).sort((a, b) => a.name.localeCompare(b.name)).map((x) => x.iso3);
-    const i = order.indexOf(r.iso3), prev = byIso.get(order[i - 1]), next = byIso.get(order[i + 1]);
-    const steps = [`<button type="button" data-go="uk">United Kingdom</button>`, `<button type="button" data-go="nation" data-v="${esc(r.nation)}">${esc(r.nation)}</button>`];
-    if (r.region !== r.nation) steps.push(`<button type="button" data-go="region" data-v="${esc(r.region)}">${esc(r.region)}</button>`);
+  // ---------- Release 2.0: where you are, and moving about ----------
+  // The trail: United Kingdom ▾ › England ▾ › North East ▾ › Gateshead ▾ › (choose a town ▾). Each step has a menu of the
+  // other places at that level; the last has a menu of the places inside it.
+  const placeOpen = () => !!(state.selected || state.town || state.nb || state.places.length || state.draw || state.mydata);
+  function currentRef() {
+    if (state.selected) return "a:" + state.selected;
+    if (state.town) return "t:" + state.town;
+    if (state.places.length === 1) return state.places[0];
+    return null;
+  }
+  const refName = (ref) => (ref === "uk" ? "United Kingdom" : ref.startsWith("nb:") ? NBH.rows.get(ref.slice(3))?.n || "Neighbourhood" : placeName(ref));
+  function trailSteps() {
+    const st = [{ ref: "uk", name: "United Kingdom" }];
+    const add = (ref, name) => st.push({ ref, name });
+    const council = (iso) => {
+      const r = byIso.get(iso); if (!r) return;
+      add("n:" + r.nation, r.nation);
+      if (r.region && r.region !== r.nation) add("r:" + r.region, r.region);
+      add("a:" + iso, r.name);
+    };
     const nbp = state.nb && NBH.rows.get(state.nb);
-    if (nbp) steps.push(`<button type="button" data-go="area">${esc(r.name)}</button>`, `<b>${esc(nbp.n)}</b>`);
-    else steps.push(`<b>${esc(r.name)}</b>`);
-    trail.innerHTML = `<nav class="trail" aria-label="Where this area is">${steps.join(`<span class="sep" aria-hidden="true">›</span>`)}</nav>
-      <span class="pn"><button type="button" class="tolist" data-go="cmp" title="Compare ${esc(r.name)} with another place">+ Compare</button><button type="button" class="tolist" data-go="list" title="Back to the list">☰ List</button>${prev ? `<button type="button" data-iso="${prev.iso3}" title="Previous in the list">‹ ${esc(prev.name)}</button>` : ""}<span class="pos">${i + 1} of ${order.length}</span>${next ? `<button type="button" data-iso="${next.iso3}" title="Next in the list">${esc(next.name)} ›</button>` : ""}</span>`;
-    trail.querySelectorAll("button[data-iso]").forEach((b) => (b.onclick = () => selectArea(b.dataset.iso)));
-    trail.querySelectorAll("button[data-go]").forEach((b) => (b.onclick = () => {
-      const g = b.dataset.go;
-      if (g === "area") { state.nb = null; render(); return; }
-      if (g === "cmp") { const cur = "a:" + state.selected; state.selected = null; state.places = [cur]; state.nb = null; render(); const t2 = $("#ppType"); if (t2) { t2.value = "a"; t2.dispatchEvent(new Event("change")); } return; }
-      state.selected = null; render();
-      if (g === "uk") svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
-      else if (g !== "list") zoomToGroup(g, b.dataset.v);
-    }));
+    if (nbp) { council(nbp.la); add("nb:" + state.nb, nbp.n); }
+    else if (state.selected) council(state.selected);
+    else if (state.town && TOWNS?.by.get(state.town)) {
+      const t = TOWNS.by.get(state.town), r = byIso.get(t.la[0]);
+      if (r) { add("n:" + r.nation, r.nation); if (r.region !== r.nation) add("r:" + r.region, r.region); }
+      add("t:" + t.c, t.n);
+    } else if (state.places.length === 1) {
+      const ref = state.places[0], pd = placeData(ref);
+      if (pd && ref[0] === "r") add("n:England", "England");
+      if (pd && ref[0] === "c") {
+        add("n:" + pd.nation, pd.nation);
+        const regs = [...new Set(pd.members.map((c) => byIso.get(c)?.region))];
+        if (regs.length === 1 && regs[0] !== pd.nation) add("r:" + regs[0], regs[0]);
+      }
+      if (pd) add(ref, pd.name);
+    }
+    return st;
+  }
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  const councilsWhere = (test) => rows.filter((r) => r.sovereign && test(r)).sort(byName).map((r) => ({ ref: "a:" + r.iso3, name: r.name }));
+  function siblingsOf(ref) {
+    const k2 = ref.split(":")[0], id = ref.slice(ref.indexOf(":") + 1);
+    if (k2 === "n") return { title: "Nations", items: (window.NATIONS || []).map((n) => ({ ref: "n:" + n, name: n })) };
+    if (k2 === "r") return { title: "Regions of England", items: placeOptions("r") };
+    if (k2 === "c") { const nat = placeData(ref)?.nation; return { title: "City regions", items: placeOptions("c").filter((o) => placeData(o.ref)?.nation === nat) }; }
+    if (k2 === "a") { const r = byIso.get(id); return r && { title: `Councils in ${r.region}`, items: councilsWhere((x) => x.region === r.region) }; }
+    if (k2 === "t" && TOWNS) {
+      const t = TOWNS.by.get(id), reg = byIso.get(t?.la[0])?.region;
+      return { title: `Towns and cities in ${reg}`, items: TOWNS.list.filter((x) => byIso.get(x.la[0])?.region === reg).slice(0, 120).map((x) => ({ ref: "t:" + x.c, name: x.n })).sort(byName) };
+    }
+    return null;
+  }
+  function childrenOf(ref) {
+    const k2 = ref.split(":")[0], id = ref.slice(ref.indexOf(":") + 1);
+    if (ref === "uk") return { label: "Choose a nation", title: "Nations", items: siblingsOf("n:England").items };
+    if (k2 === "n" && id === "England") return { label: "Choose a region", title: "Regions of England", items: placeOptions("r") };
+    if (k2 === "n") return { label: "Choose a council", title: `Councils in ${id}`, items: councilsWhere((r) => r.nation === id) };
+    if (k2 === "r") return { label: "Choose a council", title: `Councils in ${id}`, items: councilsWhere((r) => r.region === id) };
+    if (k2 === "c") { const mem = new Set(placeData(ref)?.members || []); return { label: "Choose a council", title: `Councils in ${id}`, items: councilsWhere((r) => mem.has(r.iso3)) }; }
+    if (k2 === "a" && TOWNS) {
+      const ts = TOWNS.list.filter((t) => t.la[0] === id).map((t) => ({ ref: "t:" + t.c, name: t.n }));
+      return ts.length ? { label: "Choose a town", title: `Towns and cities mostly in ${byIso.get(id)?.name}`, items: ts } : null;
+    }
+    return null;
+  }
+  function goRef(ref) {
+    state.mydata = false; state.draw = null; state.orgs = false;
+    if (ref === "uk") { state.ui = "explore"; goWholeUK(); render(); return; }
+    if (ref.startsWith("nb:")) { selectNb(ref.slice(3), true); return; }
+    if (ref[0] === "t") { townsLoad().then(() => setPlaces([ref])); return; }
+    setPlaces([ref]);
+  }
+  // a small menu under a trail button
+  const tmenu = document.createElement("div");
+  tmenu.id = "trailMenu"; tmenu.className = "card trailmenu"; tmenu.hidden = true; tmenu.setAttribute("role", "menu");
+  document.body.appendChild(tmenu);
+  function openTrailMenu(btn, spec) {
+    if (!spec || !spec.items?.length) return;
+    const r = btn.getBoundingClientRect();
+    tmenu.innerHTML = `<div class="tm-title">${esc(spec.title)}</div>${spec.items.length > 12 ? `<input type="search" class="tm-q" placeholder="Type to find…" aria-label="Find in this list">` : ""}
+      <div class="tm-list">${spec.items.map((o) => `<button type="button" role="menuitem" data-ref="${esc(o.ref)}"${o.ref === currentRef() ? ' aria-current="true"' : ""}>${esc(o.name)}</button>`).join("")}</div>`;
+    tmenu.hidden = false;
+    tmenu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 300)) + "px";
+    tmenu.style.top = (r.bottom + 4) + "px";
+    tmenu.style.maxHeight = Math.max(200, window.innerHeight - r.bottom - 24) + "px";
+    const q = tmenu.querySelector(".tm-q");
+    if (q) { q.focus(); q.oninput = () => { const v = q.value.toLowerCase(); tmenu.querySelectorAll(".tm-list button").forEach((b) => (b.hidden = !b.textContent.toLowerCase().includes(v))); }; }
+    tmenu.querySelectorAll("[data-ref]").forEach((b) => (b.onclick = () => { tmenu.hidden = true; goRef(b.dataset.ref); }));
+  }
+  document.addEventListener("click", (e) => { if (!tmenu.hidden && !tmenu.contains(e.target) && !e.target.closest(".trail2 [data-menu]")) tmenu.hidden = true; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !tmenu.hidden) tmenu.hidden = true; });
+  function renderCrumbs() {
+    const trail = $("#crumbTrail");
+    if (!trail) return;
+    if (state.ui !== "explore" || state.mydata) { trail.hidden = true; return; }
+    trail.hidden = false;
+    const st = trailSteps(), last = st[st.length - 1];
+    const kids = last.ref.startsWith("nb:") ? null : childrenOf(last.ref);
+    const stepH = st.map((x, i) => {
+      const sib = i > 0 && !x.ref.startsWith("nb:");
+      const isLast = i === st.length - 1;
+      return `<span class="tstep${isLast ? " cur" : ""}"><button type="button" class="tgo" data-go="${esc(x.ref)}"${isLast ? ' aria-current="page"' : ""}>${esc(x.name)}</button>${sib ? `<button type="button" class="tdd" data-menu="sib" data-ref="${esc(x.ref)}" aria-label="Other places like ${esc(x.name)}" title="Other places at this level">▾</button>` : ""}</span>`;
+    }).join(`<span class="sep" aria-hidden="true">›</span>`);
+    const kidH = kids ? `<span class="sep" aria-hidden="true">›</span><button type="button" class="tkids" data-menu="kids" data-ref="${esc(last.ref)}">${esc(kids.label)} ▾</button>` : "";
+    // what else this place is part of
+    let part = "";
+    if (state.selected && !state.nb) {
+      const r = byIso.get(state.selected), ts = TOWNS ? TOWNS.list.filter((t) => t.la[0] === state.selected).slice(0, 5) : [];
+      const bits = [];
+      if (r?.city) bits.push(`<button type="button" class="pchip" data-go="c:${esc(r.city)}">${esc(r.city)} <small>city region</small></button>`);
+      ts.forEach((t) => bits.push(`<button type="button" class="pchip" data-go="t:${esc(t.c)}">${esc(t.n)} <small>town</small></button>`));
+      if (bits.length) part = `<div class="tpart"><span>Includes or part of:</span>${bits.join("")}</div>`;
+      if (!TOWNS) townsLoad().then(() => renderCrumbs());
+    } else if (state.town && TOWNS?.by.get(state.town)) {
+      part = `<div class="tpart"><span>In:</span>${TOWNS.by.get(state.town).la.map((c) => `<button type="button" class="pchip" data-go="a:${c}">${esc(byIso.get(c)?.name || c)} <small>council</small></button>`).join("")}</div>`;
+    }
+    const cur = currentRef(), inTray = cur && state.tray.includes(cur);
+    const nf = state.filters.length;
+    trail.innerHTML = `<div class="trailrow"><nav class="trail2" aria-label="Where you are">${stepH}${kidH}</nav>
+      <span class="tacts">${nf ? `<button type="button" class="tback" data-act="find" title="Back to the places that match your filters">‹ Your ${nf} filter${nf === 1 ? "" : "s"}</button>` : ""}${cur ? `<button type="button" class="tcmp${inTray ? " on" : ""}" data-act="tray" title="${inTray ? "In your compare list" : "Add to the places you are comparing"}">${inTray ? "✓ In compare list" : "+ Compare"}</button>` : ""}</span></div>${part}`;
+    trail.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (b.getAttribute("aria-current") === "page" && !state.nb && !state.orgs) return; goRef(b.dataset.go); }));
+    trail.querySelectorAll("[data-menu]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); openTrailMenu(b, b.dataset.menu === "kids" ? childrenOf(b.dataset.ref) : siblingsOf(b.dataset.ref)); }));
+    trail.querySelector("[data-act=find]")?.addEventListener("click", () => setUI("find"));
+    trail.querySelector("[data-act=tray]")?.addEventListener("click", () => { if (inTray) trayRemove(cur); else trayAdd(cur); });
+  }
+  // ---------- the three modes ----------
+  function setUI(m) {
+    tmenu.hidden = true; nbCtl.hidden = true; $("#lyBtn")?.setAttribute("aria-expanded", "false");
+    if (m === "compare") {
+      state.ui = "compare"; state.view = "map";
+      if (state.tray.length >= 2) { setPlaces(state.tray); return; }
+      Object.assign(state, { selected: null, town: null, nb: null, places: [], draw: null, mydata: false, orgs: false });
+      render(); return;
+    }
+    Object.assign(state, { selected: null, town: null, nb: null, places: [], draw: null, mydata: false, orgs: false });
+    state.ui = m === "find" ? "find" : "explore";
+    if (m !== "find") state.view = "map";
+    goWholeUK();
+    render();
+    $("#results")?.scrollTo?.({ top: 0 });
+  }
+  function renderModesBar() {
+    document.querySelectorAll("#uiModes [data-ui]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.ui === state.ui)));
+    const n = $("#uiCmpN"); if (n) { n.textContent = state.tray.length; n.hidden = !state.tray.length; }
+  }
+  // ---------- the compare list ----------
+  function trayAdd(ref) { if (!ref) return; if (!state.tray.includes(ref)) state.tray = [...state.tray, ref].slice(-6); render(); }
+  function trayRemove(ref) {
+    state.tray = state.tray.filter((x) => x !== ref);
+    if (state.ui === "compare") { if (state.tray.length >= 2) { setPlaces(state.tray); return; } state.places = []; }
+    render();
+  }
+  function renderTray() {
+    let bar = $("#trayBar");
+    const panel = $("#panel");
+    if (!bar && panel) { bar = document.createElement("div"); bar.id = "trayBar"; bar.className = "traybar"; panel.appendChild(bar); }
+    if (!bar) return;
+    bar.hidden = !state.tray.length || state.ui === "compare" || !desk();
+    if (bar.hidden) return;
+    const n = state.tray.length;
+    bar.innerHTML = `<span class="tb-l">Compare list</span><span class="tb-chips">${state.tray.map((r2) => `<span class="ppchip">${esc(placeName(r2))}<button type="button" data-rm="${esc(r2)}" aria-label="Remove ${esc(placeName(r2))}">×</button></span>`).join("")}</span>
+      <button type="button" class="tb-go" ${n < 2 ? "disabled" : ""}>${n < 2 ? "Add another place to compare" : `Compare ${n} places →`}</button>`;
+    bar.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => trayRemove(b.dataset.rm)));
+    bar.querySelector(".tb-go").onclick = () => setUI("compare");
+  }
+  function cmpPickerHTML() {
+    return `<div class="cmpadd"><div class="cmpchips">${state.tray.map((r2) => `<span class="ppchip">${esc(placeName(r2))}<button type="button" data-rm="${esc(r2)}" aria-label="Remove ${esc(placeName(r2))}">×</button></span>`).join("")}</div>
+      <div class="cmpslot"></div></div>`;
+  }
+  function bindCmpPicker(el) {
+    el.querySelectorAll(".cmpadd [data-rm]").forEach((b) => (b.onclick = () => trayRemove(b.dataset.rm)));
+    const slot = el.querySelector(".cmpslot"), pp = PPEL;
+    if (slot && pp) { slot.appendChild(pp); const ppAdd = pp.querySelector("#ppAdd"); if (ppAdd) ppAdd.textContent = state.tray.length >= 6 ? "Full (6)" : "+ Add"; }
+  }
+  function renderCompareHome() {
+    const el = $("#results");
+    el.innerHTML = `<div class="detail cmphome"><h2>Compare places</h2>
+      <p class="sub">Put up to six places side by side: nations, regions, city regions, councils, towns or your own areas.</p>
+      <ol class="cmpsteps"><li>Choose the kind of place and type its name, then press <b>+ Add</b>. Or press <b>+ Compare</b> on any place's page as you explore.</li><li>When two or more are in the list, they appear side by side here.</li></ol>
+      ${cmpPickerHTML()}
+      ${state.tray.length === 1 ? `<p class="snote">One place in the list so far. Add another.</p>` : ""}</div>`;
+    bindCmpPicker(el);
+  }
+  // ---------- the home page: the whole UK, and three ways to start ----------
+  function renderHome() {
+    const el = $("#results"), uk = GROUPS.get("uk"), ck = colourKey();
+    el.innerHTML = `<div class="detail home">
+      <div class="starts">
+        <button type="button" data-start="look"><b>Look up a place</b><span>A nation, region, city region, council, town, neighbourhood, postcode or charity</span></button>
+        <button type="button" data-start="find"><b>Find places that match…</b><span>Filter all 361 councils: high child poverty and poor broadband, say</span></button>
+        <button type="button" data-start="data"><b>Map your own data</b><span>See where your members or service users are. Your file stays on your computer.</span></button>
+      </div>
+      <div class="homenat"><span>Or start with a nation:</span>${(window.NATIONS || []).map((n) => `<button type="button" class="achip" data-ref="n:${esc(n)}">${esc(n)}</button>`).join("")}</div>
+      ${ck ? `<p class="snote homekey">The map is coloured by <b>${esc(F[ck].label)}</b>. Change it in the key at the bottom of the map.</p>` : ""}
+      ${uk ? groupPageHTML(uk).replace(/<h3 class="gs-list">[^<]*<\/h3>/, "") : ""}
+    </div>`;
+    el.querySelectorAll("[data-ref]").forEach((b) => (b.onclick = () => goRef(b.dataset.ref)));
+    el.querySelector("[data-start=look]").onclick = () => { const i = $("#addInput"); if (i) { i.focus(); i.placeholder = "Type a place, postcode or charity…"; } };
+    el.querySelector("[data-start=find]").onclick = () => setUI("find");
+    el.querySelector("[data-start=data]").onclick = () => { state.mydata = true; render(); };
   }
 
   function rowHTML(r, sf, fail, override, pos) {
@@ -4201,6 +4465,10 @@
     const pl = state.places.filter((r2) => r2[0] !== "u");   // your own areas live in your browser, so they can't go in a link
     if (pl.length) p.set("pl", pl.join(","));
     if (ORG.layers.size) p.set("ly", [...ORG.layers].join("."));
+    if (state.ui === "find") p.set("u", "find");
+    const tr = state.tray.filter((r2) => r2[0] !== "u");
+    if (tr.length && state.ui !== "compare") p.set("tr", tr.join(","));
+    if (state.areas !== "auto") p.set("ar", state.areas);
     if (NBH.shade !== "d") p.set("sh", NBH.shade);
     window.WV?.encode(p);
     return p.toString();
@@ -4248,6 +4516,10 @@
     if (p.get("pl")) { const pl = p.get("pl").split(",").filter((r2) => /^[nrcta]:/.test(r2)); const go = () => setPlaces(pl); if (pl.some((r2) => r2[0] === "t")) townsLoad().then(go); else if (GROUPS.size) go(); else pendingPlaces = pl; }
     (p.get("ly") || "").split(".").filter((x) => LAYERS.some((l) => l[0] === x)).forEach((x) => ORG.layers.add(x));
     if (p.get("sh")) NBH.shade = p.get("sh");
+    // release 2.0: the mode (old links with filters open Find places), the compare list, the areas coloured
+    state.ui = p.get("u") === "find" || (state.filters.length && !p.get("s") && !p.get("pl") && !p.get("tw")) || p.get("v") ? "find" : "explore";
+    if (p.get("tr")) state.tray = p.get("tr").split(",").filter((r2) => /^[nrcta]:/.test(r2)).slice(0, 6);
+    if (["la", "nb"].includes(p.get("ar"))) state.areas = p.get("ar");
     window.WV?.decode(p);
     const y = +p.get("y");
     if (y && TS_YEARS.includes(y)) { state.year = y; applyYear(y); }  // clamped to the filters' years on first render
@@ -4284,7 +4556,7 @@
     zoomBy: (f) => svg.transition().duration(250).call(zoom.scaleBy, f),
     panBy: (dx, dy) => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.translateBy, dx / t.k, dy / t.k); },
     resetZoom: () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity),
-    zoomToCountry: (iso) => zoomToCountry(iso), insetShift, selectArea, zoomToGroup, openAbout: () => openAbout(), NB, openMyData: () => { state.mydata = true; render(); }, openNotebook: (t) => openNotebook(t), printReport: () => printReport(), setPlaces: (r2) => setPlaces(r2),
+    zoomToCountry: (iso) => zoomToCountry(iso), insetShift, selectArea, zoomToGroup, openAbout: () => openAbout(), NB, openMyData: () => { state.mydata = true; render(); }, openNotebook: (t) => openNotebook(t), printReport: () => printReport(), setPlaces: (r2) => setPlaces(r2), setUI: (m) => setUI(m), trayAdd: (r2) => trayAdd(r2), goRef: (r2) => goRef(r2), startDraw: () => startDraw(), currentRef: () => currentRef(), notesCount: () => NOTES.length, hasPlace: () => !!currentRef(),
     project: (lon, lat) => projection([lon, lat]), geoPath: () => path, landNode: () => gLand.node(), get k() { return d3.zoomTransform(svg.node()).k; },
     layer: (name) => { let g = gRoot.select(`g.layer-${name}`); if (g.empty()) g = gRoot.append("g").attr("class", `layer-${name}`); return g; },
     zoomToPoint: (lon, lat, k = 4) => { const [x, y] = projection([lon, lat]); const vb = svg.attr("viewBox").split(" ").map(Number); svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(vb[2] / 2 - x * k, vb[3] / 2 - y * k).scale(k)); },

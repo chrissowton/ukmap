@@ -2835,3 +2835,167 @@ body.desk .crumbsel.withtrail .uk { display: none; }
 /* 1.7: keep the decile number on one line beside its bar on narrow screens */
 .nbdoms dd .num { white-space: nowrap; min-width: 1.4em; text-align: right; flex: none; }
 .nbdoms dd .dbar { flex: 1 1 auto; min-width: 0; }
+
+/* =====================================================================
+   Release 2.0: a clearer layout (see shell.js)
+   - a bar across the top with the three modes; the map as wide as the place needs; the panel's parts per mode
+   ===================================================================== */
+/* --- the bar across the top --- */
+body.desk > .top { flex: none; display: flex; flex-wrap: nowrap; align-items: center; gap: 14px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); z-index: 50; }
+body.desk > .top .brand h1 { font-size: 21px; margin: 0; white-space: nowrap; }
+body.desk > .top .add { flex: 0 1 380px; min-width: 180px; margin: 0; }
+body.desk > .top #dockTop:empty, body.desk > .top #modes { display: none; }
+.uimodes, .appmenus { display: none; }
+body.desk .uimodes { display: flex; gap: 2px; padding: 3px; margin-left: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 11px; flex: none; }
+body.desk .uimodes button { border: 0; background: none; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+body.desk .uimodes button:hover:not([aria-current="true"]) { background: var(--surface); color: var(--ink); }
+body.desk .uimodes button[aria-current="true"] { background: var(--accent); color: #fff; }
+.uin { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent-soft, #e0f2f1); color: var(--accent); font-size: 11.5px; line-height: 18px; text-align: center; }
+.uimodes button[aria-current="true"] .uin { background: #fff; }
+body.desk .appmenus { display: flex; gap: 6px; flex: none; }
+.amw { position: relative; }
+.ambtn { border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 6px 11px; font-weight: 500; font-size: 13.5px; white-space: nowrap; }
+.ambtn:hover, .ambtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.appmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 90; width: 300px; max-height: calc(100vh - 80px); overflow: auto; padding: 6px; display: flex; flex-direction: column; box-shadow: 0 14px 40px rgba(0, 0, 0, .18); }
+.appmenu[hidden] { display: none; }
+.appmenu > button, .appmenu > a, .appmenu #amSlots .cp-tool, .appmenu #moreTools .cp-tool { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 7px; background: none; color: var(--ink); font-size: 13.5px; text-decoration: none; font-weight: 400; box-shadow: none; }
+.appmenu > button:hover:not(:disabled), .appmenu > a:hover, .appmenu .cp-tool:hover { background: var(--bg); }
+.appmenu > button:disabled { opacity: .45; cursor: default; }
+.appmenu .amh { padding: 8px 10px 3px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.appmenu .cp-tool .cp-ic { width: 18px; text-align: center; }
+.amn { color: var(--muted); }
+
+/* --- map and panel --- */
+body.desk .shell { position: relative; }
+body.desk.pc-off .shell { grid-template-columns: minmax(0, 1fr) 0; }
+body.desk.pc-off .wpanel { display: none; }
+.ptoggle { display: none; }
+body.desk .ptoggle { display: grid; place-items: center; position: absolute; top: 50%; left: var(--mapw); transform: translate(-100%, -50%); z-index: 30; width: 20px; height: 56px; padding: 0; border: 1px solid var(--line); border-right: 0; border-radius: 8px 0 0 8px; background: var(--surface); color: var(--muted); font-size: 15px; box-shadow: -2px 0 8px rgba(0, 0, 0, .06); }
+body.desk.pc-off .ptoggle { left: 100%; }
+body.desk .ptoggle:hover { color: var(--accent); }
+
+/* buttons on the map: Whole UK and Layers top-left, zoom top-right; the key bottom-left */
+.mapbar { position: absolute; top: 10px; left: 10px; z-index: 9; display: flex; gap: 8px; }
+.mapbar .ukbtn { position: static; transform: none; }
+.mapbar .ukbtn[hidden] { display: none; }
+.lybtn { border-color: var(--line); color: var(--ink); }
+.lybtn[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+body.desk .zoom { top: 10px; right: 10px; left: auto; bottom: auto; flex-direction: row; }
+body.desk .zoom #zreset, body.desk .zoom #zlabels, body.desk .zoom #mapDl, body.desk .zoom #mapAb, body.desk .zoom #mmBtn { display: none !important; }
+body.desk #mmCard { left: 10px; right: auto; top: 54px; }
+body.desk .mapfoot { right: auto; width: min(460px, calc(100% - 24px)); padding: 8px 12px; gap: 4px; }
+body.desk .mapfoot:has(.legend[hidden]):has(.timebar.off):has(#nbKey[hidden]) { display: none; }
+body.desk .mapfoot:has(.legend[hidden]):has(.timebar.off):not(:has(#nbKey)) { display: none; }
+.ltitle { display: flex; align-items: center; gap: 8px; }
+.lwhat { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.lcolour, #nbKey select { flex: 1; min-width: 0; max-width: 340px; font-size: 13px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.nbkeyrow { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+.nbkeyrow[hidden] { display: none; }
+.nbkeyrow .nbkey { display: flex; align-items: center; gap: 2px; font-size: 11.5px; color: var(--muted); }
+.nbkeyrow .nbkey i { flex: 1; height: 10px; }
+.nbkeyrow .nbkey span { padding: 0 5px; white-space: nowrap; }
+.nbkeyrow .nbnote { margin: 0; font-size: 11px; color: var(--muted); }
+/* the Layers box */
+.nbctl { top: 52px; left: 10px; right: auto; width: 330px; max-width: calc(100% - 20px); max-height: calc(100% - 80px); overflow: auto; padding: 0; z-index: 12; box-shadow: 0 14px 40px rgba(0, 0, 0, .2); }
+body.desk .nbctl { max-width: calc(100% - 20px); }
+.lp-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px; }
+.lp-head h3 { margin: 0; font-size: 15px; }
+.lp-step { padding: 8px 12px 10px; border-top: 1px solid var(--line); }
+.lp-step h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; font-size: 13px; }
+.lp-step h4 span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; }
+.lp-step h4 small { margin-left: auto; font-weight: 400; color: var(--muted); }
+.lp-radio { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; cursor: pointer; }
+.lp-radio input { margin-top: 3px; }
+.lp-radio b { display: block; font-size: 13px; font-weight: 600; }
+.lp-radio small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.lp-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
+.lp-checks label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; cursor: pointer; }
+.lp-checks i { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px rgba(0, 0, 0, .15); }
+.lp-step .nbnote { margin: 6px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.lp-max { color: #b91c1c !important; }
+.lp-more { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; font-size: 13px; }
+.lp-names { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+/* one geography filled at a time: with dots on, the colours go paler so the dots stand out */
+body.dots-on #map path.nb { fill-opacity: .5; }
+body.dots-on #map .odot { stroke: #fff; stroke-width: .8px; vector-effect: non-scaling-stroke; }
+#map .odot { stroke: #fff; stroke-width: .6px; vector-effect: non-scaling-stroke; }
+body.desk.nb-on #map path.unfocus { opacity: .3; }
+
+/* --- the panel --- */
+body.desk .phead { padding: 12px 22px 0; }
+body.desk:not([data-ui="find"]) .findbar { display: none; }
+body.desk[data-ui="find"] .crumbtrail { display: none; }
+.fb-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.fb-head h2 { margin: 0; font-size: 20px; font-family: var(--display, inherit); }
+body.desk .fb-head #views { display: flex; gap: 2px; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; width: auto; flex-direction: row; }
+body.desk .fb-head #views button { width: auto; flex: none; gap: 5px; padding: 4px 10px; border: 0; border-radius: 7px; background: none; color: var(--muted); font-size: 13px; font-weight: 500; }
+body.desk .fb-head #views button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+body.desk .fb-head #views button svg { display: none; }
+body.desk #placeTools { display: none !important; }
+body.desk #ppHold { display: none; }
+/* the trail */
+.crumbtrail { padding-bottom: 6px; }
+.trailrow { display: flex; align-items: flex-start; gap: 10px; }
+.trail2 { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; flex: 1; min-width: 0; font-size: 14px; }
+.trail2 .sep { color: var(--muted); padding: 0 2px; }
+.tstep { display: inline-flex; align-items: center; border-radius: 7px; }
+.tstep .tgo { border: 0; background: none; padding: 3px 4px; color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; }
+.tstep .tgo:hover { text-decoration-color: var(--accent); }
+.tstep.cur .tgo { color: var(--ink); font-weight: 600; text-decoration: none; cursor: default; }
+.tstep .tdd { border: 0; background: none; padding: 3px 5px; border-radius: 6px; color: var(--muted); font-size: 12px; }
+.tstep .tdd:hover, .tkids:hover { background: var(--bg); color: var(--ink); }
+.tkids { border: 1px dashed var(--line); background: none; border-radius: 7px; padding: 2px 9px; color: var(--muted); font-size: 13px; }
+.tacts { display: flex; gap: 6px; flex: none; }
+.tcmp, .tback { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 4px 10px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.tcmp { border-color: var(--accent); color: var(--accent); }
+.tcmp.on { background: var(--accent); color: #fff; }
+.tcmp:hover, .tback:hover { background: var(--bg); }
+.tcmp.on:hover { background: var(--accent); opacity: .9; }
+.tpart { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+.pchip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 2px 9px; font-size: 12.5px; color: var(--ink); }
+.pchip small { color: var(--muted); }
+.pchip:hover { border-color: var(--accent); }
+.trailmenu { position: fixed; z-index: 95; width: 290px; overflow: auto; padding: 6px; display: flex; flex-direction: column; box-shadow: 0 14px 40px rgba(0, 0, 0, .2); }
+.trailmenu[hidden] { display: none; }
+.tm-title { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tm-q { margin: 2px 4px 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; }
+.tm-list { display: flex; flex-direction: column; }
+.tm-list button { text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 6px; font-size: 13.5px; }
+.tm-list button:hover { background: var(--bg); }
+.tm-list button[aria-current="true"] { font-weight: 600; color: var(--accent); }
+/* the place's page: the name already shows in the trail, so the page starts with its heading and figures */
+body.desk #results > .detail { padding-top: 8px; }
+/* the compare list at the bottom of the panel */
+.traybar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 22px; border-top: 1px solid var(--line); background: var(--bg); flex: none; }
+.traybar[hidden] { display: none; }
+.tb-l { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tb-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.tb-go { margin-left: auto; border: 0; background: var(--accent); color: #fff; border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 13px; }
+.tb-go:disabled { background: none; color: var(--muted); font-weight: 400; cursor: default; }
+/* compare */
+.cmpadd { margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.cmpchips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cmpchips:empty { display: none; }
+.cmpslot .placepick { display: flex !important; flex-wrap: wrap; gap: 6px; }
+.cmpslot #ppGo, .cmpslot #ppChips { display: none !important; }
+.cmpsteps { margin: 8px 0; padding-left: 20px; color: var(--muted); }
+.cmpsteps li { margin: 3px 0; }
+/* home */
+.home .starts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 6px 0 12px; }
+.home .starts button { text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.home .starts button:hover { border-color: var(--accent); box-shadow: 0 4px 14px rgba(0, 0, 0, .06); }
+.home .starts b { font-size: 15px; color: var(--accent); }
+.home .starts span { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.homenat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 13px; color: var(--muted); }
+.homekey { margin: 6px 0 14px; }
+@media (max-width: 1200px) { .home .starts { grid-template-columns: 1fr; } .home .starts button { flex-direction: row; align-items: baseline; gap: 10px; } }
+@media (max-width: 1100px) { body.desk .uimodes button { padding: 6px 10px; } body.desk > .top .add { flex-basis: 260px; } }
+body.desk .crumbtrail { display: block; flex: none; }
+body.desk .crumbtrail[hidden] { display: none; }
+/* with a council's neighbourhoods coloured, the councils round it go grey, so only one set of areas is in colour */
+body.desk.nb-on #map path.unfocus { opacity: .5; filter: grayscale(1) brightness(1.08); }
+body.desk.nb-on .mapfoot .legend { display: none; }
+/* faded areas go grey on a laptop, so only the place being looked at is in colour */
+body.desk #map path.unfocus { opacity: .55; filter: grayscale(1) brightness(1.1); }
+body.desk #map .nbs path.nb.outtown { opacity: 0; pointer-events: none; }
+body.desk #map path.unfocus, body.desk.nb-on #map path.unfocus { fill: var(--land) !important; opacity: 1; filter: none; }

@@ -1,10 +1,10 @@
-/* Which Places? — the page layout on a laptop or bigger (release 1.0.2).
-   The UK is tall and narrow, so:
-   - the map on the left at the full height of the screen, as wide as the UK's shape needs (app.js works the width out),
-     with its key and year in one small card
-   - a panel on the right: the name, search and tools; the five views as tabs; where you are
-     (United Kingdom › nation › region › area); the filters as chips; the sentence saying what is shown;
-     then the results table, one area's profile, or a chart.
+/* Which Places? — the page layout on a laptop or bigger (release 2.0).
+   - A bar across the top: the name, search, the three modes (Explore, Find places, Compare), Tools and Help.
+   - The map on the left, as wide as the place being shown needs (app.js works it out: the tall UK gets a narrower map,
+     a round council a wider one), with Whole UK and Layers buttons at its top and the key at its bottom.
+   - The panel on the right: in Explore, the trail (United Kingdom ▾ › England ▾ › …) and the place's page; in Find places,
+     the filters, the sentence saying what matches, and List / Scatter / Rankings / Charts / Insights; in Compare, the
+     places side by side. A compare list waits at the bottom of the panel.
    Phones keep their own layout: below 761px wide nothing here applies, and anything moved is put back.
    The page's parts are moved, not copied, so everything in app.js and the other scripts keeps working. */
 (function () {
@@ -20,59 +20,89 @@
   }
   function putBack() { for (const [el, mark] of home) if (mark.parentNode) mark.parentNode.insertBefore(el, mark.nextSibling); }
   function make(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function menu(btn, box) {
+    const close = () => { box.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+    btn.onclick = (e) => { e.stopPropagation(); const open = box.hidden; document.querySelectorAll(".appmenu").forEach((m) => (m.hidden = true)); box.hidden = !open; btn.setAttribute("aria-expanded", String(open)); if (open) box.dispatchEvent(new Event("open")); };
+    document.addEventListener("click", (e) => { if (!box.hidden && !box.contains(e.target)) close(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !box.hidden) close(); });
+    box.addEventListener("click", (e) => { if (e.target.closest("button, a")) setTimeout(close, 0); });
+  }
 
   let panel, built = false;
   function build() {
     const top = $(".top"), shell = $(".shell");
     if (!top || !shell) return;
-    // ---- top bar ----
-    let tabs = $("#topTabs");
-    if (!tabs) { tabs = make("div", "toptabs"); tabs.id = "topTabs"; top.appendChild(tabs); }
-    move($("#views"), tabs);
-    let tools = $("#topTools");
-    if (!tools) {
-      tools = make("div", "toptools", `<span class="tt" id="ttStx"></span><span class="tt" id="ttDl"></span><span class="tt" id="ttShare"></span>
-        <span class="tt"><button type="button" id="moreBtn" class="cp-tool morebtn" aria-expanded="false" aria-controls="moreMenu">More ▾</button>
-        <div id="moreMenu" class="card moremenu" hidden><div id="moreTools"></div>
-          <button type="button" class="mlink" data-m="notebook">📝 Notebook</button>
-          <button type="button" class="mlink" data-m="report">🖨 Print a report for this place</button>
-          <button type="button" class="mlink" data-m="mydata">📤 Map your own data (postcodes)</button>
-          <a class="mlink" href="guide.html" target="_blank" rel="noopener">Using Which Places? for a funding bid</a>
-          <a class="mlink" href="methods.html" target="_blank" rel="noopener">How the figures are made</a>
-          <button type="button" class="mlink" data-m="about">Sources &amp; methods</button>
-          <a class="mlink" href="m/index.html" target="_blank" rel="noopener">Every measure A–Z</a>
-          <a class="mlink" href="whatsnew.html" target="_blank" rel="noopener">What's new</a>
-          <button type="button" class="mlink" data-m="copy">Copy a link to this view</button></div></span>`);
-      tools.id = "topTools";
+    const W = () => window.WC;
+    // ---- the bar across the top ----
+    if (!$("#uiModes")) {
+      const modes = make("nav", "uimodes", `<button type="button" data-ui="explore">Explore</button><button type="button" data-ui="find">Find places</button><button type="button" data-ui="compare">Compare <b id="uiCmpN" class="uin" hidden>0</b></button>`);
+      modes.id = "uiModes"; modes.setAttribute("aria-label", "What do you want to do?");
+      top.appendChild(modes);
+      modes.querySelectorAll("[data-ui]").forEach((b) => (b.onclick = () => W()?.setUI(b.dataset.ui)));
+      const tools = make("div", "appmenus", `
+        <span class="amw"><button type="button" id="toolsBtn" class="ambtn" aria-expanded="false" aria-controls="toolsMenu">Tools ▾</button>
+          <div id="toolsMenu" class="card appmenu" hidden>
+            <div class="amh">This place</div>
+            <button type="button" data-m="report">🖨 Print a report for this place</button>
+            <button type="button" data-m="note">📝 Add a note</button>
+            <div class="amh">Your work (kept in this browser)</div>
+            <button type="button" data-m="notebook">📒 Notebook <span id="amNotes" class="amn"></span></button>
+            <button type="button" data-m="draw">✏️ Make your own area from neighbourhoods</button>
+            <button type="button" data-m="mydata">📤 Map your own data (postcodes)</button>
+            <div class="amh">Map and data</div>
+            <div id="amSlots"></div>
+            <button type="button" data-m="style">🎨 Map styles: change over time, two measures</button>
+            <button type="button" data-m="copy">🔗 Copy a link to this view</button>
+            <div id="moreTools"></div>
+          </div></span>
+        <span class="amw"><button type="button" id="helpBtn" class="ambtn" aria-expanded="false" aria-controls="helpMenu">Help ▾</button>
+          <div id="helpMenu" class="card appmenu" hidden>
+            <a href="guide.html" target="_blank" rel="noopener">Using Which Places? for a funding bid</a>
+            <a href="methods.html" target="_blank" rel="noopener">How the figures are made</a>
+            <button type="button" data-m="about">Sources &amp; methods</button>
+            <a href="m/index.html" target="_blank" rel="noopener">Every measure A–Z</a>
+            <a href="whatsnew.html" target="_blank" rel="noopener">What's new</a>
+          </div></span>`);
+      tools.id = "appMenus";
       top.appendChild(tools);
-      const menu = tools.querySelector("#moreMenu"), btn = tools.querySelector("#moreBtn");
-      btn.onclick = (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute("aria-expanded", String(!menu.hidden)); };
-      document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); } });
-      menu.addEventListener("click", (e) => {
-        const m = e.target.closest("[data-m]")?.dataset.m;
-        if (m === "about") window.WC?.openAbout();
-        if (m === "notebook") window.WC?.openNotebook();
-        if (m === "report") window.WC?.printReport();
-        if (m === "mydata") window.WC?.openMyData();
-        if (m === "copy") navigator.clipboard?.writeText(location.href).then(() => { const s = $("#sentence"); if (s) s.textContent = "Link copied."; }).catch(() => prompt("Copy this link:", location.href));
-        if (e.target.closest("button, a")) { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); }
+      menu($("#toolsBtn"), $("#toolsMenu"));
+      menu($("#helpBtn"), $("#helpMenu"));
+      $("#toolsMenu").addEventListener("open", () => {
+        const has = !!W()?.hasPlace();
+        $("#toolsMenu [data-m=report]").disabled = !has;
+        $("#toolsMenu [data-m=report]").title = has ? "" : "Open a place first";
+        const n = W()?.notesCount() || 0; $("#amNotes").textContent = n ? `(${n})` : "";
+      });
+      document.addEventListener("click", (e) => {
+        const b = e.target.closest(".appmenu [data-m]"); if (!b) return;
+        const m = b.dataset.m, w = W();
+        if (m === "report") w?.printReport();
+        if (m === "note" || m === "notebook") w?.openNotebook();
+        if (m === "draw") w?.startDraw();
+        if (m === "mydata") w?.openMyData();
+        if (m === "about") w?.openAbout();
+        if (m === "style") setTimeout(() => $("#mmBtn")?.click(), 0);
+        if (m === "copy") navigator.clipboard?.writeText(location.href).then(() => { b.textContent = "✓ Link copied"; setTimeout(() => (b.textContent = "🔗 Copy a link to this view"), 1800); }).catch(() => prompt("Copy this link:", location.href));
       });
     }
-    move($("#stxBtn"), $("#ttStx")); move($("#dlBtn"), $("#ttDl")); move($("#shareBtn"), $("#ttShare"));
-    ["sbsBtn", "tblBtn", "ixBtn", "dscBtn", "nhBtn"].forEach((id) => { const b = document.getElementById(id); if (b && !b.hidden) move(b, $("#moreTools")); });
+    ["stxBtn", "dlBtn", "shareBtn"].forEach((id) => move(document.getElementById(id), $("#amSlots")));
+    ["tblBtn", "ixBtn", "dscBtn", "nhBtn"].forEach((id) => { const b = document.getElementById(id); if (b && !b.hidden) move(b, $("#moreTools")); });
 
     // ---- the panel ----
     panel = $("#panel");
     if (!panel) {
       panel = make("section", "wpanel", `<div class="phead" id="phead">
-          <div class="crumbs"><span id="crumbSel" class="crumbsel"><span class="uk">United Kingdom</span></span><div id="crumbTrail" class="crumbtrail" hidden></div></div>
-          <div class="frow" id="frow"><span class="flab">Filters</span><span id="chipsSlot"></span>
-            <button type="button" id="addFilter" class="addf" aria-haspopup="dialog">+ Add a filter</button>
-            <button type="button" id="clearF" class="clearf" hidden>Clear all</button></div>
-          <div id="sentSlot"></div></div>
-        <div class="pbody" id="pbody"></div>`);
+          <div id="crumbTrail" class="crumbtrail" hidden></div>
+          <div id="findBar" class="findbar">
+            <div class="fb-head"><h2>Find places</h2><span id="viewSlot"></span></div>
+            <div class="frow" id="frow"><span class="flab">Filters</span><span id="chipsSlot"></span>
+              <button type="button" id="addFilter" class="addf" aria-haspopup="dialog">+ Add a filter</button>
+              <button type="button" id="clearF" class="clearf" hidden>Clear all</button></div>
+            <div id="sentSlot"></div></div></div>
+        <div class="pbody" id="pbody"></div>
+        <div id="ppHold" hidden></div>`);
       panel.id = "panel";
-      panel.setAttribute("aria-label", "Filters and results");
+      panel.setAttribute("aria-label", "The place, filters and results");
       shell.appendChild(panel);
       $("#addFilter").onclick = (e) => {
         e.stopPropagation();
@@ -80,13 +110,20 @@
         document.querySelector("#themes .theme-btn")?.click();
       };
       $("#clearF").onclick = () => window.WC?.clearAll();
-      // "Clear all" shows only when there is something to clear
       const chips = $("#chips");
       new MutationObserver(() => { $("#clearF").hidden = !chips.children.length; }).observe(chips, { childList: true });
+      // a button on the panel's edge hides it, so the map can use the whole screen
+      const pt = make("button", "ptoggle", "‹");
+      pt.type = "button"; pt.id = "pToggle"; pt.title = "Hide the panel (map full screen)"; pt.setAttribute("aria-label", "Hide the panel");
+      pt.onclick = () => {
+        const off = document.body.classList.toggle("pc-off");
+        pt.textContent = off ? "›" : "‹"; pt.title = off ? "Show the panel" : "Hide the panel (map full screen)";
+        requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+      };
+      shell.appendChild(pt);
     }
-    // the title, search, view tabs and tools sit at the top of the panel, so the map can use the full height of the screen
-    move(top, panel, $("#phead"));
-    move($("#placePick"), $("#crumbSel"));
+    move($("#views"), $("#viewSlot"));
+    move($("#placePick"), $("#ppHold"));
     move($("#chips"), $("#frow"), $("#addFilter"));
     move($("#sentence"), $("#sentSlot"));
     move($("#editor"), $("#phead"));
@@ -94,13 +131,18 @@
     move($("#viewwrap"), $("#pbody"));
     move($("#results"), $("#pbody"));
     $("#clearF").hidden = !$("#chips").children.length;
+    // the views' names, as tabs within Find places
+    const names = { map: "List", compare: "Scatter", rank: "Rankings", trends: "Charts", insights: "Insights" };
+    document.querySelectorAll("#views button[data-v]").forEach((b) => { const t = [...b.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()); if (t && names[b.dataset.v]) t.textContent = names[b.dataset.v]; });
     document.body.classList.add("desk");
     built = true;
   }
   function unbuild() {
     if (!built) return;
     putBack();
-    document.body.classList.remove("desk");
+    document.body.classList.remove("desk", "pc-off");
+    const names = { map: "Map", compare: "Compare", rank: "Rankings", trends: "Charts", insights: "Insights" };
+    document.querySelectorAll("#views button[data-v]").forEach((b) => { const t = [...b.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim()); if (t && names[b.dataset.v]) t.textContent = names[b.dataset.v]; });
     built = false;
   }
   function apply() {
