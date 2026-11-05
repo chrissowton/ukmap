@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the figures are made – Which Places?</title>
+<meta name="description" content="How Which Places? makes its figures: official figures, figures added up from smaller areas, and estimates.">
+<link rel="canonical" href="https://chrissowton.github.io/ukmap/methods.html">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#f7f5f0;--surface:#fff;--ink:#1d2a30;--muted:#5b6b72;--line:#e2ddd2;--accent:#0f6674}
+@media (prefers-color-scheme:dark){:root{--bg:#10191e;--surface:#16242b;--ink:#e8eef0;--muted:#9fb0b6;--line:#2a3b43;--accent:#6cc1d2}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--accent)}header{padding:14px 20px;border-bottom:1px solid var(--line);background:var(--surface)}header a{color:var(--ink);text-decoration:none;font-weight:700;font-size:20px}header a b{color:#e0a000}
+main{max-width:760px;margin:0 auto;padding:20px 16px 60px}h1{font-size:30px;margin:8px 0 4px}.lead{color:var(--muted)}
+section{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 18px;margin:16px 0}
+h2{font-size:19px;margin:4px 0}h2 small{font-weight:400;color:var(--muted);font-size:14px;margin-left:6px}ul{padding-left:20px;margin:6px 0}li{margin:3px 0}
+h3{font-size:16px;margin:14px 0 4px}ol{padding-left:22px}li{margin:4px 0}.tip{background:#fff7e0;border:1px solid #f0d890;border-radius:10px;padding:8px 14px;margin:12px 0}@media (prefers-color-scheme:dark){.tip{background:#2b2615;border-color:#5a4c1e}}
+</style></head><body>
+<header><a href="index.html">Which Places<b>?</b></a></header>
+<main>
+
+<h1>How the figures are made</h1>
+<p class="lead">Every figure on Which Places? comes from an official open source. Some are published exactly as shown; others are worked out on the site. This page explains which is which.</p>
+<section><h2>Official figures</h2><p>Most council figures (income, pay, poverty, health, house prices, emissions and more) are published by ONS and other government departments for each local authority, and shown unchanged. Figures for nations, regions and England's combined authorities are also official where ONS publishes them.</p></section>
+<section><h2>Added up</h2><p>Some figures are added up exactly from smaller areas: population and age for regions and city regions; census figures, which are counts of people or households; and the number of charities and schools.</p></section>
+<section><h2>Estimates (marked ≈)</h2><p>When there is no official figure for a place, the site works one out from the councils or neighbourhoods inside it: an average weighted by the people the measure is about (children for child poverty, people aged 16 to 64 for work, everyone else for the rest). Medians, like median pay or house prices, can only be estimated this way. Towns and your own areas are made from neighbourhoods, so their census figures are estimates too.</p></section>
+<section><h2>Comparing the four nations</h2><ul>
+<li><b>Census:</b> England, Wales and Northern Ireland held their census in 2021, Scotland in 2022. Questions are mostly the same; where one census asked differently or not at all, that nation has no figure.</li>
+<li><b>Deprivation:</b> each nation has its own index, made in a different year (England and Wales 2025, Scotland 2020, Northern Ireland 2017), so compare within a nation only. Scotland's and Northern Ireland's indices use older small areas, matched to today's by postcode.</li>
+<li><b>New homes and apprenticeships</b> are counted differently in each nation.</li></ul></section>
+<section><h2>Neighbourhoods, towns and charities</h2><ul>
+<li><b>Neighbourhoods</b> are LSOAs in England and Wales, and data zones in Scotland and Northern Ireland (about 1,500 people each).</li>
+<li><b>Towns and cities</b> are ONS built-up areas (England and Wales), made from the neighbourhoods that best fit them, so edges are approximate.</li>
+<li><b>Charities</b> come from the three charity registers and are placed in the neighbourhood of their registered postcode. No addresses or people's details are shown.</li></ul></section>
+<section><h2>Your data stays with you</h2><p>Your notebook and your own areas are kept in your browser on your computer. Nothing you type is sent anywhere. Clearing your browser's data removes them, so download anything you want to keep.</p></section>
+<p>The full list of sources, with links and licences, is in <a href="index.html">the site</a> under More → Sources &amp; methods, and in <a href="https://github.com/chrissowton/ukmap/blob/main/DATA-SOURCES.md">DATA-SOURCES.md</a>.</p>
+
+</main></body></html>

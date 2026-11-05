@@ -34,6 +34,11 @@
       tools = make("div", "toptools", `<span class="tt" id="ttStx"></span><span class="tt" id="ttDl"></span><span class="tt" id="ttShare"></span>
         <span class="tt"><button type="button" id="moreBtn" class="cp-tool morebtn" aria-expanded="false" aria-controls="moreMenu">More ▾</button>
         <div id="moreMenu" class="card moremenu" hidden><div id="moreTools"></div>
+          <button type="button" class="mlink" data-m="notebook">📝 Notebook</button>
+          <button type="button" class="mlink" data-m="report">🖨 Print a report for this place</button>
+          <button type="button" class="mlink" data-m="mydata">📤 Map your own data (postcodes)</button>
+          <a class="mlink" href="guide.html" target="_blank" rel="noopener">Using Which Places? for a funding bid</a>
+          <a class="mlink" href="methods.html" target="_blank" rel="noopener">How the figures are made</a>
           <button type="button" class="mlink" data-m="about">Sources &amp; methods</button>
           <a class="mlink" href="m/index.html" target="_blank" rel="noopener">Every measure A–Z</a>
           <a class="mlink" href="whatsnew.html" target="_blank" rel="noopener">What's new</a>
@@ -46,6 +51,9 @@
       menu.addEventListener("click", (e) => {
         const m = e.target.closest("[data-m]")?.dataset.m;
         if (m === "about") window.WC?.openAbout();
+        if (m === "notebook") window.WC?.openNotebook();
+        if (m === "report") window.WC?.printReport();
+        if (m === "mydata") window.WC?.openMyData();
         if (m === "copy") navigator.clipboard?.writeText(location.href).then(() => { const s = $("#sentence"); if (s) s.textContent = "Link copied."; }).catch(() => prompt("Copy this link:", location.href));
         if (e.target.closest("button, a")) { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); }
       });
@@ -78,7 +86,7 @@
     }
     // the title, search, view tabs and tools sit at the top of the panel, so the map can use the full height of the screen
     move(top, panel, $("#phead"));
-    move($("#goTo")?.closest("label"), $("#crumbSel"));
+    move($("#placePick"), $("#crumbSel"));
     move($("#chips"), $("#frow"), $("#addFilter"));
     move($("#sentence"), $("#sentSlot"));
     move($("#editor"), $("#phead"));

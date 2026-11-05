@@ -82,9 +82,10 @@ C = [
          ni=("c01", ["Gay or lesbian", "Bisexual", "Other sexual orientation"], "All usual residents aged 16 and over"),
          info="Share of people aged 16 and over who described their sexual orientation as gay or lesbian, bisexual, or another minority orientation (out of everyone, including those who did not answer this voluntary question). England, Wales and Northern Ireland.",
          kw="lgb lgbt gay lesbian bisexual sexual orientation", phrase="the share of people who are gay, lesbian, bisexual or another minority orientation"),
-    dict(key="c_veterans", group="Census: people", label="Armed forces veterans", short="Veterans", nations="EWS",
+    dict(key="c_veterans", group="Census: people", label="Armed forces veterans", short="Veterans",
          ew=("forcesServed", [1, 2, 3], ALL), scot=("UV901 ", ["UK Armed Forces veteran"], "All people aged 16 and over"),
-         info="Share of people aged 16 and over who have served in the UK armed forces (regular or reserve). Not asked in Northern Ireland.",
+         ni=("afv001", ["Veteran"], "@g01:All usual residents aged 16 and over"),
+         info="Share of people aged 16 and over who have served in the UK armed forces (regular or reserve). Northern Ireland's figures come from NISRA's veterans tables (published June 2026), as a share of residents aged 16 and over.",
          kw="veterans armed forces military army navy raf", phrase="the share of adults who are armed forces veterans"),
 
     # ---------------- Census: health and care ----------------
@@ -297,7 +298,15 @@ def main():
             t, num, den = m["ni"]
             if t not in cache_n:
                 cache_n[t] = read_ni(a.ni, t)
+            other = None
+            if den.startswith("@"):            # the people the question applies to, from another table
+                t2, den = den[1:].split(":", 1)
+                if t2 not in cache_n:
+                    cache_n[t2] = read_ni(a.ni, t2)
+                other = cache_n[t2]
             for code, row in cache_n[t].items():
+                if other is not None:
+                    row = {**row, norm(den): (other.get(code) or {}).get(norm(den))}
                 miss = [l for l in num + [den] if norm(l.lstrip("-")) not in row]
                 if miss:
                     raise SystemExit(f"{m['key']}: NI columns not found {miss}; have {list(row)[:40]}")

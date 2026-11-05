@@ -124,6 +124,24 @@ ONS's built-up areas (2022) for England and Wales, from the **LSOA (2021) to Bui
 
 Population for each data zone (mid-2024) from NISRA's **2024 mid-year population estimates for small geographical areas** (MYE24_DZ.xlsx), Open Government Licence.
 
+## Release 1.6
+
+- **Northern Ireland armed forces veterans:** NISRA, Census 2021 UK Armed Forces veterans tables (AFV001, published 25 June 2026), as a share of residents aged 16 and over (from table MS-G01). Open Government Licence v3.0.
+- **Charity search** uses `org/search.json`: every placed charity's name, council, register and number, built by `scripts/build_orgs.py`.
+- **Notebook and your own areas** are stored only in the visitor's browser (localStorage); nothing is sent to any server.
+
+## Release 1.7
+
+Built by `scripts/build_fac.py` (writes `fac/<council code>.json`, rows of kind, name, neighbourhood and link; no addresses or contact details) and `scripts/build_towns.py`.
+
+- **GP practices:** NHS England Organisation Data Service, GP and other prescribing practices (`epraccur.csv`, November 2026). Active practices with codes of a letter and five digits only; prescribing-only, hospital, prison and specialist service codes are left out. England, and Welsh practices listed by NHS England. Open Government Licence v3.0.
+- **Pharmacies:** NHS England Organisation Data Service, dispensaries (`edispensary.csv`, November 2026), active only. England. Open Government Licence v3.0.
+- **Food banks:** Give Food, https://github.com/givefood/data (food banks and their other locations), CC BY 4.0. Phone numbers and email addresses are not used.
+- **Crime:** data.police.uk street-level crime, September 2025 to August 2026 (12 months), Open Government Licence v3.0. Counted for each council and each neighbourhood (LSOA) from the LSOA code on each record, per 1,000 residents. Greater Manchester Police does not publish street-level data, so its ten councils have no figure. Gloucestershire Constabulary is missing after January 2026: for any council, months with a quarter or less of its busiest month's crimes are left out and the rest scaled up to a year. Northern Ireland is not included. Neighbourhood figures are written into `nb/<council>.json` as `crime_rate`, `crime_viol` and `crime_asb`.
+- **Sports and leisure centres (and later other places):** OpenStreetMap, exported with Overpass Turbo in November 2026, © OpenStreetMap contributors, Open Database Licence (ODbL). The places in `fac/` taken from OpenStreetMap remain under the ODbL. Each map point is put in the neighbourhood it falls in; only names and the OpenStreetMap reference are kept. Doctors and pharmacies from OpenStreetMap are used only where the NHS lists don't reach (doctors in Scotland and Northern Ireland, pharmacies outside England).
+- **Scotland's towns:** National Records of Scotland, Census 2022 Index (output area to settlement 2022), with each 2022 data zone given to the settlement most of its output areas are in. Crown copyright, Open Government Licence v3.0.
+- **Your own data** is read in the visitor's browser only; only counts per neighbourhood are kept, and only while the page is open.
+
 ## Notes
 
 - **Area** is measured from the boundary map, which is clipped to the coastline and simplified, so it is close to but not exactly the official area.

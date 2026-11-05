@@ -61,7 +61,7 @@ window.SDG_STATUS = [];
 
 window.FILTER_GROUPS = ["Places", "Population", "Age", "Money and work", "Housing", "Deprivation", "Health", "Wellbeing",
   "Education and skills", "Getting connected", "Services and culture", "Environment",
-  "Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning", "Charities and schools"];
+  "Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning", "Charities and schools", "Health and food services", "Crime"];
 // the measures on the cards at the top of each area's page (and used to find similar areas)
 window.HEADLINE = ["population", "median_age", "pct_65plus", "gdhi_pc", "child_pov_ahc", "claimant_rate", "life_exp_f", "dep_all"];
 
@@ -168,6 +168,45 @@ window.FILTERS.push(
     keywords: "charities income funding voluntary sector",
   }),
 );
+// Services and crime (release 1.7)
+window.FILTERS.push(
+  num("gp_per10k", "Health and food services", "GP practices per 10,000 people", {
+    short: "GP practices", step: 0.05, format: "dec2", source: "nhsods", year: "gp_per10k_year", yearText: "Nov 2026", nations: "EW",
+    say: (b) => `GP practices per 10,000 people is ${b}`,
+    info: "Active GP practices with a postcode in the area, per 10,000 residents. England and Wales only (from NHS England's list, which includes Welsh practices). Practices vary a lot in size, so fewer practices does not always mean fewer doctors.",
+    keywords: "gp doctors surgery health access nhs primary care",
+  }),
+  num("pharm_per10k", "Health and food services", "Pharmacies per 10,000 people", {
+    short: "Pharmacies", step: 0.05, format: "dec2", source: "nhsods", year: "pharm_per10k_year", yearText: "Nov 2026", nations: "E",
+    say: (b) => `pharmacies per 10,000 people is ${b}`,
+    info: "Active community pharmacies with a postcode in the area, per 10,000 residents. England only.",
+    keywords: "pharmacy chemist health access nhs",
+  }),
+  num("foodbank_per100k", "Health and food services", "Food banks per 100,000 people", {
+    short: "Food banks", step: 0.5, format: "dec1", source: "givefood", year: "foodbank_per100k_year", yearText: "Nov 2026",
+    say: (b) => `food banks per 100,000 people is ${b}`,
+    info: "Food banks and their distribution points listed by Give Food (Trussell, IFAN and independent), per 100,000 residents. More food banks can mean more need, more provision, or both.",
+    keywords: "food banks food poverty hunger trussell emergency food",
+  }),
+  num("crime_rate", "Crime", "Police-recorded crime", {
+    short: "Crime", step: 1, format: "per1000", source: "police", year: "crime_rate_year", yearText: "Sep 2025 to Aug 2026", nations: "EW",
+    say: (b) => `police-recorded crime is ${b}`,
+    info: "Crimes and anti-social behaviour recorded by the police in the area, per 1,000 residents, over the 12 months from September 2025 to August 2026. England and Wales; no figures for Greater Manchester, whose force does not publish street-level data. Gloucestershire's figures are from September 2025 to January 2026 only, scaled up to a year. City centres score high because many crimes happen where people work, shop and go out, not where they live.",
+    keywords: "crime police safety antisocial behaviour",
+  }),
+  num("crime_viol", "Crime", "Violence and sexual offences", {
+    short: "Violence", step: 1, format: "per1000", source: "police", year: "crime_viol_year", yearText: "Sep 2025 to Aug 2026", nations: "EW",
+    say: (b) => `violence and sexual offences are ${b}`,
+    info: "Violence and sexual offences recorded by the police, per 1,000 residents, over the 12 months to August 2026. England and Wales, with the same gaps as police-recorded crime.",
+    keywords: "violence sexual offences crime police safety",
+  }),
+  num("crime_asb", "Crime", "Anti-social behaviour", {
+    short: "Anti-social behaviour", step: 1, format: "per1000", source: "police", year: "crime_asb_year", yearText: "Sep 2025 to Aug 2026", nations: "EW",
+    say: (b) => `anti-social behaviour is ${b}`,
+    info: "Anti-social behaviour incidents recorded by the police, per 1,000 residents, over the 12 months to August 2026. England and Wales, with the same gaps as police-recorded crime.",
+    keywords: "anti-social behaviour asb nuisance crime police",
+  }),
+);
 window.SOURCES = {
   onsmye: {
     name: "ONS, NRS and NISRA mid-year population estimates (via ONS Explore Local Statistics)",
@@ -181,6 +220,10 @@ window.SOURCES = {
   },
   cityreg: { name: "Combined authorities and city regions as used by ONS Explore Local Statistics (November 2026); members listed in scripts/city_regions.json", url: "https://www.gov.uk/guidance/combined-authorities", licence: "Open Government Licence v3.0" },
   charities: { name: "Charity Commission for England and Wales, Scottish Charity Regulator (OSCR) and Charity Commission for Northern Ireland registers (November 2026); counted on this site by registered postcode", url: "https://register-of-charities.charitycommission.gov.uk/", licence: "Open Government Licence v3.0" },
+  nhsods: { name: "NHS England Organisation Data Service: GP practices (epraccur) and dispensaries (edispensary), November 2026; counted on this site by postcode", url: "https://digital.nhs.uk/services/organisation-data-service/export-data-files/csv-downloads/gp-and-gp-practice-related-data", licence: "Open Government Licence v3.0" },
+  givefood: { name: "Give Food: UK food banks and their locations (github.com/givefood/data), November 2026; counted on this site by postcode", url: "https://www.givefood.org.uk/", licence: "CC BY 4.0" },
+  osm: { name: "OpenStreetMap: sports and leisure centres and other places, © OpenStreetMap contributors (November 2026)", url: "https://www.openstreetmap.org/copyright", licence: "Open Database Licence (ODbL)" },
+  police: { name: "data.police.uk: street-level crime, September 2025 to August 2026 (police forces of England and Wales); counted on this site by neighbourhood", url: "https://data.police.uk/data/", licence: "Open Government Licence v3.0" },
   myindex: { name: "Your own index, worked out on this site from the measures and weights you chose (each measure from its own source)", url: "#", licence: "—" },
 };
 
@@ -242,7 +285,8 @@ window.THEMES = [
   { id: "learning", label: "Education", groups: ["Education and skills"] },
   { id: "services", label: "Services", groups: ["Getting connected", "Services and culture"] },
   { id: "environment", label: "Environment", groups: ["Environment"] },
-  { id: "charities", label: "Charities", groups: ["Charities and schools"] },
+  { id: "charities", label: "Charities and services", groups: ["Charities and schools", "Health and food services"] },
+  { id: "crime", label: "Crime", groups: ["Crime"] },
   { id: "census", label: "Census", groups: ["Census: people", "Census: health and care", "Census: homes and households", "Census: work and learning"] },
   { id: "places", label: "Places", groups: ["Places"] },
 ];

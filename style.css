@@ -2759,3 +2759,79 @@ body.desk .nbctl { max-width: min(270px, calc(100% - 190px)); }
 .otable th, .otable td, .nbtable th { font-family: var(--body); }
 .otable th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; }
 .otable th.num { text-align: right; }
+
+/* =====================================================================
+   Release 1.5: places (pick one or more, compare), faded surroundings, map layers
+   ===================================================================== */
+.placepick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.placepick select, .placepick input { font-size: 12.5px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
+.placepick input { width: 220px; border-radius: 8px; }
+.placepick input:disabled { opacity: .6; }
+.placepick .ppgo, .placepick .ppadd { border: 1px solid var(--accent); background: var(--surface); color: var(--accent); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; font-weight: 600; }
+.placepick .ppgo:disabled, .placepick .ppadd:disabled { opacity: .4; cursor: default; }
+.placepick .ppgo:not(:disabled):hover, .placepick .ppadd:not(:disabled):hover { background: var(--accent); color: #fff; }
+.ppchips { display: contents; }
+.ppchip { display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--ink); border-radius: 999px; padding: 2px 4px 2px 10px; font-size: 12.5px; font-weight: 500; }
+.ppchip button { border: 0; background: none; font-size: 15px; line-height: 1; padding: 0 4px; color: var(--muted); }
+.ppchip button:hover { color: var(--ink); }
+body.desk .crumbsel { flex-wrap: wrap; }
+body.desk .crumbs .placepick { flex: 1; }
+@media (max-width: 760px) { .placepick input { width: 100%; flex: 1 1 160px; } }
+/* everywhere outside the chosen places keeps its colours, faded and lightly striped */
+#map path.unfocus { opacity: .38; }
+#map path.focus { stroke: var(--ink); stroke-width: .9px; }
+/* map layers */
+.nblayers { border: 0; margin: 8px 0 0; padding: 0; }
+.nblayers legend { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 0; margin-bottom: 3px; }
+.nblayers label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 1px 0; cursor: pointer; }
+.nblayers label i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+#map .orgdots circle.odot { fill-opacity: .8; stroke: var(--surface); stroke-width: .8px; vector-effect: non-scaling-stroke; }
+/* comparison */
+.comparepage h2 { font-size: 26px; margin: 4px 0; }
+.comparepage .sub { color: var(--muted); margin: 0 0 12px; }
+.cmpwrap { overflow-x: auto; }
+.cmptable th.num .linkbtn { font-weight: 600; text-align: right; }
+.cmptable td.hi { font-weight: 700; }
+.cmptable td.lo { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); text-underline-offset: 3px; }
+.cmptable td.ukc { color: var(--muted); }
+.lo-key { text-decoration: underline; text-underline-offset: 3px; }
+.placepage .gsum { margin-top: 0; }
+body.desk .crumbs { flex-wrap: wrap; row-gap: 6px; }
+body.desk .crumbtrail { order: 0; flex: 1 1 100%; }
+body.desk .crumbsel { order: 1; flex: 1 1 100%; }
+body.desk .crumbsel.withtrail .uk { display: none; }
+@media (max-width: 760px) { .nblayers .nbnote { display: none; } .nbctl { padding: 6px 8px; } }
+
+/* =====================================================================
+   Release 1.6: place tools, notebook, your own areas
+   ===================================================================== */
+.placetools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.placetools button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 11px; font-size: 12.5px; color: var(--ink); }
+.placetools button:hover { border-color: var(--accent); background: var(--accent-soft); }
+.placetools button[hidden] { display: none; }
+#ptBook { margin-left: auto; }
+.notebook { position: fixed; right: 16px; top: 70px; bottom: 16px; width: min(380px, calc(100vw - 32px)); z-index: 200; overflow: auto; padding: 14px 16px; box-shadow: 0 16px 50px rgba(0, 0, 0, .25); display: flex; flex-direction: column; gap: 8px; }
+.notebook[hidden] { display: none; }
+.nbk-head { display: flex; align-items: center; justify-content: space-between; }
+.nbk-head h3 { margin: 0; font-size: 18px; }
+.nbk-new textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: inherit; resize: vertical; }
+.nbk-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; margin-top: 4px; }
+.nbk-note { border-top: 1px solid var(--line); padding: 8px 0; }
+.nbk-meta { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.nbk-meta .linkbtn { font-size: 12px; }
+.nbk-del { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 16px; }
+.nbk-text { font-size: 13.5px; margin-top: 2px; white-space: normal; }
+#map .nbs path.nb.drawn { fill: var(--accent) !important; fill-opacity: .75; stroke: var(--ink); stroke-width: 1.2px; }
+.drawpage .drawname { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; font-weight: 600; font-size: 13px; }
+.drawpage .drawname input { flex: 1; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-weight: 400; }
+.drawbtns { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.drawbtns .achip[disabled] { opacity: .45; cursor: default; }
+@media (max-width: 760px) { .placetools { margin: 6px 0; } #ptBook { margin-left: 0; } .notebook { top: 12px; right: 8px; left: 8px; width: auto; } }
+.placetools[hidden] { display: none; }
+@media (max-width: 760px) { .placetools button { padding: 2px 9px; font-size: 12px; } }
+.tip2 { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 10px; padding: 8px 12px; }
+.mydatapage input[type="file"] { margin: 8px 0; }
+
+/* 1.7: keep the decile number on one line beside its bar on narrow screens */
+.nbdoms dd .num { white-space: nowrap; min-width: 1.4em; text-align: right; flex: none; }
+.nbdoms dd .dbar { flex: 1 1 auto; min-width: 0; }

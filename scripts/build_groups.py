@@ -28,7 +28,7 @@ import build_census as BC     # noqa: E402
 
 CHILD_W = {"child_pov_ahc", "child_pov_bhc", "child_obese", "ks2_rwm", "gcse_em", "early_years"}
 # per-person measures counted from every council: the population-weighted average is the exact figure for the group
-EXACT_PER_PERSON = {"ch_per1k", "ch_inc_pc"}
+EXACT_PER_PERSON = {"ch_per1k", "ch_inc_pc", "gp_per10k", "pharm_per10k", "foodbank_per100k", "crime_rate", "crime_viol", "crime_asb"}
 WORK_W = {"claimant_rate", "employment_rate", "inactive", "unemployment", "job_density", "level3", "no_quals", "weekly_pay", "apprentices"}
 
 

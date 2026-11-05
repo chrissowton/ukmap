@@ -6,12 +6,17 @@ Free, open maps and data for every local authority in the UK, for charities, com
 
 Which Places? is built from [Which Countries?](https://github.com/chrissowton/worldmap), the open-source world map for geography, and shares its code.
 
-## What's in release 1.4
+## What's in release 1.7
 
+- Your own data: a CSV of postcodes matched to neighbourhoods in the browser (never uploaded) and compared with deprivation.
+- GP practices, pharmacies and food banks as layers and measures (`fac/`), police-recorded crime for every council and neighbourhood (England and Wales, 12 months), and sports and leisure centres from OpenStreetMap.
+- Scotland's towns and cities (NRS settlements).
 - The 361 local authorities of England, Wales, Scotland and Northern Ireland (detailed May 2025 boundaries), grouped into the 12 UK regions and the four nations, with Shetland in an inset and a Go to menu for every nation and region.
 - A layout made for a tall country: the map on the left at full height; on the right, a trail (United Kingdom › nation › region › area) with previous and next, the filters as chips, a sortable results table, and area profiles comparing each place with its region, nation and the UK.
 - 54 local measures on money and work, housing, health, wellbeing, education, connectivity, services, environment and deprivation (all four nations' indices), from ONS Explore Local Statistics and the IMD package; see DATA-SOURCES.md.
-- Charities from all three registers, schools and children's centres, placed in neighbourhoods (`org/`); towns and cities in England and Wales (`towns.json`).
+- Charity search by name, printable reports, a notebook and your own areas (the last two are kept in the browser, never uploaded). Guides: `guide.html`, `methods.html`.
+- Choose places in two steps, compare up to six side by side, and switch map layers (charities, schools, children's centres) on and off.
+- Charities from all three registers, schools and children's centres, placed in neighbourhoods (`org/`); towns and cities in England, Wales and Scotland (`towns.json`).
 - Neighbourhoods: all 46,844 small areas in the UK, with deprivation, population, age and census figures, loaded one council at a time (`nb/`), and a postcode finder (`pc/`).
 - 25 census measures for all four nations (England, Wales and Northern Ireland 2021; Scotland 2022).
 - 23 city regions, and a page for every nation, region and city region with its own figures (official where published, otherwise worked out from its councils).
@@ -42,7 +47,7 @@ See `scripts/build_uk.py` for the commands, and `DATA-SOURCES.md` for where ever
 
 ## Licence
 
-Code: MIT (see `LICENSE`). Data: as published by each source, mostly under the Open Government Licence v3.0. Contains OS data © Crown copyright and database right.
+Code: MIT (see `LICENSE`). Data: as published by each source, mostly under the Open Government Licence v3.0. Contains OS data © Crown copyright and database right. Places from OpenStreetMap in `fac/` are © OpenStreetMap contributors and available under the Open Database Licence (https://www.openstreetmap.org/copyright); food banks are from Give Food under CC BY 4.0.
 
 ## Rebuilding the data
 
@@ -55,4 +60,6 @@ Run these in order (each adds to the files the one before wrote; inputs are list
 5. `scripts/build_small.py`: neighbourhoods and postcodes
 6. `scripts/build_orgs.py`: charities, schools and children's centres
 7. `scripts/build_towns.py`: towns and cities
-8. `node make_pages.cjs`: a page for every measure
+8. `scripts/build_fac.py`: GP practices, pharmacies, food banks, OpenStreetMap places and crime (writes `fac/`, and crime into `nb/`)
+9. `scripts/build_groups.py` again, so the groups pick up the new measures
+10. `node make_pages.cjs`: a page for every measure

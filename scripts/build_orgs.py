@@ -22,6 +22,7 @@ Inputs (not kept in this repository; see DATA-SOURCES.md):
 
 Writes:
   org/<council code>.json   {"ch": charities based there, "sc": schools and children's centres, "wk": charities based elsewhere that work there}
+  org/search.json           every charity's name, council, register and number (for searching by name)
   areas.json                adds ch_per1k, ch_inc_pc (charities based in the area per 1,000 people, and their income per person)
 """
 import argparse, csv, glob, json, os, re, shutil, sys
@@ -310,6 +311,12 @@ def main():
             r["sc_n_year"] = 2026
     with open(os.path.join(a.out, "areas.json"), "w") as f:
         json.dump(rows, f, separators=(",", ":"))
+    # every charity's name, for the search box: [name, council, register, number], largest first
+    allc = sorted(((c, la) for la, cs in ch.items() for c in cs), key=lambda x: -(x[0]["inc"] or 0))
+    with open(os.path.join(out, "search.json"), "w") as f:
+        las = sorted(by)
+        ix = {la: i for i, la in enumerate(las)}
+        json.dump({"la": las, "c": [[c["n"], ix[la], c["r"], c["id"]] for c, la in allc]}, f, separators=(",", ":"), ensure_ascii=False)
     with open(os.path.join(out, "index.json"), "w") as f:
         json.dump({"themes": [[k, l] for k, l, _ in THEMES], "who": [[k, l] for k, l, _ in WHO], "date": "November 2026"}, f)
     print("files:", len(os.listdir(out)))

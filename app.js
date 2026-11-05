@@ -4,7 +4,7 @@
 
   // ---------- Load data ----------
   // ?v= makes browsers fetch fresh data after the site is updated (raise it in index.html too)
-  const DATA_VERSION = "8";
+  const DATA_VERSION = "12";
   // the single-file version carries its data compressed, and unpacks it first
   if (window.__READY__) await window.__READY__;
   const loadJSON = (url) => fetch(url + "?v=" + DATA_VERSION).then((r) => { if (!r.ok) throw new Error(url); return r.json(); });
@@ -19,7 +19,8 @@
   ]);
   // figures for whole groups of councils: the UK, nations, regions and city regions (groups.json, from scripts/build_groups.py)
   let GROUPS = new Map();
-  loadJSON("groups.json").then((d) => { GROUPS = new Map(d.groups.map((g) => [g.id, g])); render(); }).catch(() => {});
+  let pendingPlaces = null;   // places in a shared link, shown once the groups' figures have arrived
+  loadJSON("groups.json").then((d) => { GROUPS = new Map(d.groups.map((g) => [g.id, g])); if (pendingPlaces) { const pl = pendingPlaces; pendingPlaces = null; setPlaces(pl); } else render(); }).catch(() => {});
   const groupId = (k, v) => (k === "city" ? "c:" + v : k === "nation" || (k === "region" && (window.NATIONS || []).includes(v)) ? "n:" + v : "r:" + v);
   // cities.json rows: [name, iso3, lat, lon, population, capital]
   const cities = cityRows.map(([name, iso3, lat, lon, pop, cap], id) => ({ id, name, iso3, lat, lon, city_population: pop, city_capital: !!cap }));
@@ -744,6 +745,7 @@
     showUkBtn();
     if (e.sourceEvent || k >= 7) nbUpdate();
     gOrg.selectAll("circle").attr("r", function () { return (+this.dataset.r0 || 3) / k; });
+    if (ORG.layers.size && e.sourceEvent) { clearTimeout(orgTimer); orgTimer = setTimeout(orgDots, 250); }
   });
   svg.call(zoom).on("dblclick.zoom", null);
   $("#zin").onclick = () => svg.transition().duration(250).call(zoom.scaleBy, 1.6);
@@ -755,9 +757,9 @@
   ukBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 8 3l6 5.5M4 7.2V13h8V7.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Whole UK`;
   ukBtn.title = "Back to the whole UK";
   $("#mapstage").appendChild(ukBtn);
-  function showUkBtn() { const b = document.getElementById("ukBtn"); if (b) b.hidden = !(k > 1.02 || (desk() && (state.selected || state.town))); }
+  function showUkBtn() { const b = document.getElementById("ukBtn"); if (b) b.hidden = !(k > 1.02 || (desk() && (state.selected || state.town || state.places.length))); }
   function goWholeUK() {
-    if (state.selected || state.town) { state.selected = null; state.town = null; render(); }
+    if (state.selected || state.town || state.places.length || state.draw) { state.selected = null; state.town = null; state.places = []; state.draw = null; render(); }
     const g = $("#goTo"); if (g) g.value = "";
     svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
   }
@@ -805,6 +807,9 @@
     const want = new Set();
     if (state.selected && state.view === "map") want.add(state.selected);
     if (state.town && state.view === "map" && TOWNS?.by.get(state.town)) TOWNS.by.get(state.town).la.forEach((c) => want.add(c));
+    if (state.places.length === 1 && state.places[0][0] === "u" && myArea(state.places[0].slice(2))) myArea(state.places[0].slice(2)).las.forEach((c) => want.add(c));
+    if (state.draw) state.draw.nbs.forEach((c) => { const p2 = NBH.rows.get(c); if (p2) want.add(p2.la); });
+    if (state.places.length && state.view === "map") { const mem = state.places.flatMap((r2) => placeData(r2)?.members || []); if (mem.length <= 12) mem.forEach((c) => want.add(c)); }
     if (k >= 7 && state.view === "map") {
       if (!geoBounds) geoBounds = geo.filter((d) => d.rec).map((d) => [d.id, path.bounds(d)]);
       const t = d3.zoomTransform(svg.node()), vb = svg.attr("viewBox").split(" ").map(Number);
@@ -840,10 +845,12 @@
   const nbFmt = (key, v) => (v == null ? "no data" : NB_DECILE[key] ? `decile ${v}` : key === "ma" ? `${v}` : F[key] ? fmtShort(F[key], v) : `${v}%`);
   function nbDraw() {
     const fs = NBH.drawn.flatMap((t) => t.fs);
-    const townSet = state.town && TOWNS?.by.get(state.town) ? new Set(TOWNS.by.get(state.town).l) : null;
+    const townSet = state.draw ? null : state.town && TOWNS?.by.get(state.town) ? new Set(TOWNS.by.get(state.town).l)
+      : state.places.length === 1 && state.places[0][0] === "u" && myArea(state.places[0].slice(2)) ? new Set(myArea(state.places[0].slice(2)).nbs) : null;
+    const drawSet = state.draw ? state.draw.nbs : null;
     const sc = nbScale();
     gNb.selectAll("path").data(fs, (d) => d.properties.c).join("path")
-      .attr("class", (d) => "nb" + (d.properties.c === state.nb ? " on" : "") + (townSet ? (townSet.has(d.properties.c) ? " intown" : " outtown") : ""))
+      .attr("class", (d) => "nb" + (d.properties.c === state.nb ? " on" : "") + (townSet ? (townSet.has(d.properties.c) ? " intown" : " outtown") : "") + (drawSet && drawSet.has(d.properties.c) ? " drawn" : ""))
       .attr("data-nb", (d) => d.properties.c)
       .attr("d", path)
       .style("fill", (d) => sc.col(d.properties[sc.key]));
@@ -857,15 +864,16 @@
     const cen = (NBH.meta?.census || []).filter((k2) => F[k2]);
     const opts = `<optgroup label="Deprivation (1 = most deprived 10%)">${Object.entries(NB_DECILE).map(([k2, l]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</optgroup>
       <optgroup label="People">${Object.entries(NB_OTHER).map(([k2, [l]]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</optgroup>
-      <optgroup label="Census">${cen.map((k2) => `<option value="${k2}">${esc(F[k2].label)}</option>`).join("")}</optgroup>`;
+      <optgroup label="Census">${cen.map((k2) => `<option value="${k2}">${esc(F[k2].label)}</option>`).join("")}</optgroup>
+      ${(NBH.meta?.extra || []).length ? `<optgroup label="Crime, per 1,000 residents a year (England and Wales)">${NBH.meta.extra.filter((k2) => F[k2]).map((k2) => `<option value="${k2}">${esc(F[k2].label)}</option>`).join("")}</optgroup>` : ""}`;
     const legend = sc.kind === "decile"
       ? `<div class="nbkey"><span>Most deprived</span>${d3.range(1, 11).map((v) => `<i style="background:${sc.col(v)}" title="Decile ${v}"></i>`).join("")}<span>Least</span></div>`
       : sc.kind === "quint" ? `<div class="nbkey">${sc.ramp.map((c, i) => `<i style="background:${c}" title="${i === 0 ? `up to ${nbFmt(sc.key, sc.breaks[0])}` : i === 4 ? `${nbFmt(sc.key, sc.breaks[3])} and over` : `${nbFmt(sc.key, sc.breaks[i - 1])} to ${nbFmt(sc.key, sc.breaks[i])}`}"></i>`).join("")}</div>
         <p class="nbnote">${esc(nbFmt(sc.key, sc.lo))} to ${esc(nbFmt(sc.key, sc.hi))}: five equal groups of the neighbourhoods shown</p>` : "";
     nbCtl.innerHTML = `<label class="nbsel"><span>Neighbourhoods</span><select id="nbShade" aria-label="Shade neighbourhoods by">${opts}</select></label>${legend}
-      ${state.selected ? `<label class="nbsel nbdots"><span>Dots</span><select id="nbDots" aria-label="Dots on the map"><option value="">None</option><option value="ch" ${ORG.dots === "ch" ? "selected" : ""}>Charities based in each neighbourhood</option><option value="sc" ${ORG.dots === "sc" ? "selected" : ""}>Schools in each neighbourhood</option></select></label>` : ""}`;
-    const dsel = nbCtl.querySelector("#nbDots");
-    if (dsel) dsel.onchange = () => { ORG.dots = dsel.value; orgDots(); };
+      <fieldset class="nblayers"><legend>Show on the map</legend>${LAYERS.filter(([key]) => (key !== "my" || MYDATA?.matched) && hasKind(key)).map(([key, l, col]) => `<label><input type="checkbox" data-layer="${key}" ${ORG.layers.has(key) ? "checked" : ""}><i style="background:${col}"></i>${esc(l)}</label>`).join("")}
+        <p class="nbnote">Dots show how many are in each neighbourhood (charities by registered postcode). GP practices and pharmacies are NHS lists for England (and Welsh GP practices)${FAC_META?.osm ? ", with OpenStreetMap filling in elsewhere; places from OpenStreetMap © OpenStreetMap contributors, and may be incomplete" : ""}.</p></fieldset>`;
+    nbCtl.querySelectorAll("[data-layer]").forEach((cb) => (cb.onchange = () => { cb.checked ? ORG.layers.add(cb.dataset.layer) : ORG.layers.delete(cb.dataset.layer); orgDots(); }));
     const s = nbCtl.querySelector("#nbShade");
     s.value = NBH.shade;
     s.onchange = () => { NBH.shade = s.value; nbDraw(); if (state.nb) renderNb(); };
@@ -949,12 +957,16 @@
     (meta.census || []).filter((key) => p[key] != null && F[key]).forEach((key) => (groupsOf[F[key].group] = groupsOf[F[key].group] || []).push(key));
     const censusRows = Object.entries(groupsOf).map(([g, ks]) => `<tr class="gth"><th colspan="5">${esc(g.replace("Census: ", ""))}</th></tr>` +
       ks.map((key) => `<tr><td><button type="button" class="linkbtn nbsh" data-k="${key}" title="Shade the map's neighbourhoods by this">${esc(F[key].label)}</button></td>${cmp(key, p[key], (v) => (v == null ? "–" : fmtShort(F[key], v)))}</tr>`).join("")).join("");
+    const ex = (meta.extra || []).filter((key) => p[key] != null && F[key]);
+    const crimeRows = ex.length ? `<tr class="gth"><th colspan="5">Police-recorded crime, per 1,000 residents a year (${esc(fmtMonth(meta.crimeMonths?.[0]))} to ${esc(fmtMonth(meta.crimeMonths?.[1]))})</th></tr>`
+      + ex.map((key) => `<tr><td><button type="button" class="linkbtn nbsh" data-k="${key}" title="Shade the map's neighbourhoods by this">${esc(F[key].label)}</button></td>${cmp(key, p[key], (v) => (v == null ? "–" : fmtShort(F[key], v)))}</tr>`).join("")
+      + `<tr><td colspan="5" class="snote">Crimes are counted where they happen, but divided by the people who live there, so town centres, stations and shopping streets show high figures.</td></tr>` : "";
     el.innerHTML = `<div class="detail nbpage">
       <h2>${esc(p.n)}</h2>
       <p class="sub">${esc(noun === "LSOA" ? "Neighbourhood (LSOA)" : noun === "data zone" ? "Neighbourhood (data zone)" : "Neighbourhood")} in ${esc(r.name)} · ${esc(r.nation)}${p.p ? ` · ${d3.format(",")(p.p)} people` : ""} <span class="code">${esc(p.c)}</span></p>
       ${dep}
       <table class="gtable nbtable"><thead><tr><th></th><th class="num">This neighbourhood</th><th class="num">${esc(r.name)}</th><th class="num">${esc(r.nation)}</th><th class="num">UK</th></tr></thead>
-        <tbody>${peopleRows}${censusRows ? `<tr class="gth"><th colspan="5">Census ${ni === "S" ? "2022" : "2021"}</th></tr>` + censusRows.replace(/<tr class="gth">/g, '<tr class="gth sub">') : ""}</tbody></table>
+        <tbody>${peopleRows}${crimeRows}${censusRows ? `<tr class="gth"><th colspan="5">Census ${ni === "S" ? "2022" : "2021"}</th></tr>` + censusRows.replace(/<tr class="gth">/g, '<tr class="gth sub">') : ""}</tbody></table>
       ${ni === "N" ? `<p class="snote">Northern Ireland's population estimates and census tables for data zones are not in this release yet; its council figures are on ${esc(r.name)}'s page.</p>` : ""}
       ${ni === "E" || ni === "W" ? `<p class="snote">Some census topics (country of birth, veterans, sexual orientation) are not published for neighbourhoods in England and Wales.</p>` : ""}
       <p class="snote">Council, nation and UK columns are figures for the whole place. Population estimates for small areas are approximate; ONS asks that they are rounded to the nearest 100 when quoted.</p>
@@ -964,6 +976,7 @@
     $("#nbOrgs").onclick = () => { state.orgs = true; ORG.tab = "ch"; render(); };
     el.querySelectorAll(".nbsh").forEach((b) => (b.onclick = () => { NBH.shade = b.dataset.k; nbDraw(); }));
   }
+  const fmtMonth = (m) => { if (!m) return ""; const [y, mo] = m.split("-"); return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][+mo - 1] + " " + y; };
   // on a council's page: how its neighbourhoods compare
   function nbFillSummary(el, la) {
     const box = el.querySelector("#nbSum");
@@ -1005,7 +1018,20 @@
   // ---------- Charities, schools and children's centres (release 1.4) ----------
   // org/<council code>.json: charities based in the council (placed in their neighbourhood, never at an address), charities
   // based elsewhere that say they work there (England and Wales register), and schools and children's centres.
-  const ORG = { files: new Map(), loading: new Map(), meta: null, tab: "ch", q: "", theme: "", who: "", size: "", dots: "" };
+  const ORG = { files: new Map(), loading: new Map(), meta: null, tab: "ch", q: "", theme: "", who: "", size: "", kind: "", layers: new Set() };
+  // map layers that can be switched on and off: dots sized by how many there are in each neighbourhood
+  const LAYERS = [["ch", "Charities", "#c2410c"], ["sc", "Schools", "#2a78d6"], ["cc", "Children's centres", "#7c3aed"],
+    ["gp", "GP practices", "#0f9d58"], ["pharmacy", "Pharmacies", "#d81b60"], ["foodbank", "Food banks", "#f59e0b"],
+    ["leisure", "Sports and leisure centres", "#0891b2"], ["community", "Community centres", "#65a30d"], ["library", "Libraries", "#7c2d12"],
+    ["social", "Care and social services", "#be185d"], ["bank", "Banks and post offices", "#475569"], ["playground", "Playgrounds", "#ca8a04"],
+    ["worship", "Places of worship", "#6d28d9"], ["my", "Your data", "#111827"]];
+  const FAC_KINDS = { gp: "GP practice", pharmacy: "Pharmacy", foodbank: "Food bank", leisure: "Sports or leisure centre", community: "Community centre",
+    library: "Library", social: "Care or social service", bank: "Bank or post office", playground: "Playground", worship: "Place of worship" };
+  // which kinds of place this release has (places from OpenStreetMap are added a few kinds at a time)
+  let FAC_META = null;
+  loadJSON("fac/index.json").then((m) => { FAC_META = m; if (!nbCtl.hidden) nbDraw(); }).catch(() => {});
+  const hasKind = (key) => !FAC_KINDS[key] || ["gp", "pharmacy", "foodbank"].includes(key) || !!FAC_META?.kinds?.[key];
+  const facSrc = () => `GP practices and pharmacies: NHS England Organisation Data Service (Open Government Licence); food banks: Give Food (CC BY 4.0)${FAC_META?.osm ? "; other places: © OpenStreetMap contributors (Open Database Licence)" : ""}`;
   loadJSON("org/index.json").then((m) => { ORG.meta = m; }).catch(() => {});
   const REG = {
     E: { name: "Charity Commission for England and Wales", url: (id) => `https://register-of-charities.charitycommission.gov.uk/en/charity-search/-/charity-details/${id}` },
@@ -1024,9 +1050,13 @@
         ch: d.ch.map(([n, r, id, inc, nb, t, w, a]) => ({ n, r, id, inc, nb, t: t ? t.split(" ") : [], w: w ? w.split(" ") : [], a })),
         wk: d.wk.map(([n, id, inc, t]) => ({ n, r: "E", id, inc, t: t ? t.split(" ") : [], w: [], away: true })),
         sc: d.sc,
+        fac: [],
       };
-      ORG.files.set(la, o);
-      return o;
+      return fetch(`fac/${la}.json?v=${DATA_VERSION}`).then((x) => (x.ok ? x.json() : [])).catch(() => []).then((f) => {
+        o.fac = f.map(([k2, n, nb, id]) => ({ k: k2, n, nb, id }));
+        ORG.files.set(la, o);
+        return o;
+      });
     }).catch(() => null);
     ORG.loading.set(la, p);
     return p;
@@ -1047,14 +1077,15 @@
       box.innerHTML = `<h4>Charities and schools</h4>
         <p class="nbsumt"><b>${d3.format(",")(o.ch.length)}</b> registered charities are based here (${r.ch_per1k != null ? `${r.ch_per1k} per 1,000 people` : ""}), with a total yearly income of <b>${money(inc)}</b>; ${o.ch.length ? Math.round((100 * small) / o.ch.length) : 0}% have an income under £100,000.
         ${o.wk.length ? `Another <b>${d3.format(",")(o.wk.length)}</b> charities based elsewhere say they work here.` : ""}</p>
-        <p class="nbsumt"><b>${d3.format(",")(schools.length)}</b> schools${centres.length ? ` and <b>${centres.length}</b> children's centres` : ""}.</p>
-        <div class="achips"><button type="button" class="achip go" data-org="ch">Charities</button><button type="button" class="achip go" data-org="sc">Schools</button>${o.wk.length ? `<button type="button" class="achip go" data-org="wk">Working here</button>` : ""}</div>`;
+        <p class="nbsumt"><b>${d3.format(",")(schools.length)}</b> schools${centres.length ? ` and <b>${centres.length}</b> children's centres` : ""}.${o.fac.length ? " " + [["gp", "GP practice", "GP practices"], ["pharmacy", "pharmacy", "pharmacies"], ["foodbank", "food bank", "food banks"], ["leisure", "sports or leisure centre", "sports and leisure centres"], ["community", "community centre", "community centres"], ["library", "library", "libraries"]].map(([k2, one, many]) => { const c = o.fac.filter((f2) => f2.k === k2).length; return c ? `<b>${c}</b> ${c === 1 ? one : many}` : ""; }).filter(Boolean).join(", ") + "." : ""}</p>
+        <div class="achips"><button type="button" class="achip go" data-org="ch">Charities</button><button type="button" class="achip go" data-org="sc">Schools</button>${o.fac.length ? `<button type="button" class="achip go" data-org="fac">Services</button>` : ""}${o.wk.length ? `<button type="button" class="achip go" data-org="wk">Working here</button>` : ""}</div>`;
       box.querySelectorAll("[data-org]").forEach((b) => (b.onclick = () => { ORG.tab = b.dataset.org; state.orgs = true; render(); }));
     });
   }
   // the full list for a council (or one neighbourhood), with filters and a download
   function orgFiltered(o, nb) {
     const q = ORG.q.trim().toLowerCase();
+    if (ORG.tab === "fac") return o.fac.filter((f2) => (!nb || f2.nb === nb) && (!ORG.kind || f2.k === ORG.kind) && (!q || f2.n.toLowerCase().includes(q)));
     if (ORG.tab === "sc") return o.sc.filter((s) => (!nb || s.nb === nb) && (!q || (s.n || "").toLowerCase().includes(q) || (s.ty || "").toLowerCase().includes(q)));
     const list = ORG.tab === "wk" ? o.wk : o.ch;
     const sz = SIZES.find((s) => s[0] === ORG.size);
@@ -1068,6 +1099,7 @@
     orgLoad(r.iso3).then((o) => {
       if (!o) { el.innerHTML = `<div class="detail"><p>No list for ${esc(r.name)}.</p></div>`; return; }
       const list = orgFiltered(o, nb);
+      if (ORG.tab === "fac") return renderFacList(el, r, o, nb, list);
       const isCh = ORG.tab !== "sc";
       const shown = list.slice(0, 300);
       const opt = (arr, cur, all) => `<option value="">${all}</option>` + arr.map(([k2, l]) => `<option value="${k2}" ${cur === k2 ? "selected" : ""}>${esc(l)}</option>`).join("");
@@ -1078,7 +1110,7 @@
       el.innerHTML = `<div class="detail orgpage">
         <button type="button" class="achip go" id="orgBack">← ${esc(nb ? nbName(nb) : r.name)}</button>
         <h2>${ORG.tab === "sc" ? "Schools" : ORG.tab === "wk" ? "Charities working here" : "Charities"} in ${esc(nb ? nbName(nb) : r.name)}</h2>
-        <div class="otabs" role="tablist">${[["ch", "Based here", o.ch.length], ["wk", "Working here from elsewhere", o.wk.length], ["sc", "Schools and children's centres", o.sc.length]].filter(([k2, , n]) => n || k2 === "ch").map(([k2, l, n]) => `<button type="button" role="tab" data-t="${k2}" aria-selected="${ORG.tab === k2}">${esc(l)} <span>${d3.format(",")(nb ? (k2 === "sc" ? o.sc.filter((s) => s.nb === nb).length : k2 === "ch" ? o.ch.filter((c) => c.nb === nb).length : 0) : n)}</span></button>`).join("")}</div>
+        <div class="otabs" role="tablist">${[["ch", "Based here", o.ch.length], ["wk", "Working here from elsewhere", o.wk.length], ["sc", "Schools and children's centres", o.sc.length], ["fac", "Services", o.fac.length]].filter(([k2, , n]) => n || k2 === "ch").map(([k2, l, n]) => `<button type="button" role="tab" data-t="${k2}" aria-selected="${ORG.tab === k2}">${esc(l)} <span>${d3.format(",")(nb ? (k2 === "sc" ? o.sc.filter((s) => s.nb === nb).length : k2 === "ch" ? o.ch.filter((c) => c.nb === nb).length : k2 === "fac" ? o.fac.filter((f2) => f2.nb === nb).length : 0) : n)}</span></button>`).join("")}</div>
         <div class="ofilters"><input type="search" id="orgQ" placeholder="Search names${isCh ? " and activities" : ""}" value="${esc(ORG.q)}" aria-label="Search the list">
           ${isCh ? `<select id="orgTheme" aria-label="What it does">${opt(ORG.meta?.themes || [], ORG.theme, "Anything it does")}</select>
           ${ORG.tab === "ch" ? `<select id="orgWho" aria-label="Who it helps">${opt(ORG.meta?.who || [], ORG.who, "Anyone it helps")}</select>` : ""}
@@ -1106,25 +1138,68 @@
       if (!NBH.tiles.has(r.iso3)) nbLoad(r.iso3).then(() => { if (state.orgs) renderOrgs(); });
     });
   }
+  const isOsm = (f2) => String(f2.id || "").startsWith("osm:");
+  const facRef = (f2) => (isOsm(f2) ? `https://www.openstreetmap.org/${f2.id.slice(4)}` : f2.id);
+  function facLink(f2) {
+    if (isOsm(f2)) return `${esc(f2.n)}<div class="oa"><a href="${esc(facRef(f2))}" target="_blank" rel="noopener">On OpenStreetMap</a></div>`;
+    if (f2.k === "foodbank") return f2.id ? `<a href="${esc(f2.id)}" target="_blank" rel="noopener">${esc(f2.n)}</a>` : esc(f2.n);
+    return `${esc(f2.n)}<div class="oa">NHS code ${esc(f2.id)}</div>`;
+  }
+  function renderFacList(el, r, o, nb, list) {
+    const where = nb ? nbName(nb) : r.name;
+    el.innerHTML = `<div class="detail orgpage">
+      <button type="button" class="achip go" id="orgBack">← ${esc(where)}</button>
+      <h2>Services in ${esc(where)}</h2>
+      <div class="otabs" role="tablist">${[["ch", "Charities"], ["sc", "Schools"], ["fac", "Services"]].map(([k2, l]) => `<button type="button" role="tab" data-t="${k2}" aria-selected="${ORG.tab === k2}">${esc(l)}</button>`).join("")}</div>
+      <div class="ofilters"><input type="search" id="orgQ" placeholder="Search names" value="${esc(ORG.q)}" aria-label="Search the list">
+        <select id="orgKind" aria-label="Kind of service"><option value="">All services</option>${Object.entries(FAC_KINDS).filter(([k2]) => hasKind(k2)).map(([k2, l]) => `<option value="${k2}" ${ORG.kind === k2 ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+        <button type="button" class="linkbtn" id="orgCSV">⬇ Download (CSV)</button></div>
+      <p class="snote">${d3.format(",")(list.length)} places, each shown in the neighbourhood of its postcode or map point. ${esc(facSrc())}. NHS lists cover England (and GP practices in Wales)${FAC_META?.osm ? "; OpenStreetMap is mapped by volunteers, so it may miss some places or list some that have closed" : ""}.</p>
+      <table class="gtable otable"><thead><tr><th>Name</th><th>Service</th><th>Neighbourhood</th></tr></thead><tbody>${list.slice(0, 400).map((f2) => `<tr><td>${facLink(f2)}</td><td>${esc(FAC_KINDS[f2.k] || f2.k)}</td><td><button type="button" class="linkbtn" data-nb="${f2.nb}">${esc(nbName(f2.nb) || "neighbourhood")}</button></td></tr>`).join("")}</tbody></table>
+    </div>`;
+    $("#orgBack").onclick = () => { state.orgs = false; render(); };
+    el.querySelectorAll(".otabs button").forEach((b) => (b.onclick = () => { ORG.tab = b.dataset.t; renderOrgs(); }));
+    const q = $("#orgQ"); let tmr = 0;
+    q.oninput = () => { clearTimeout(tmr); tmr = setTimeout(() => { ORG.q = q.value; renderOrgs(); }, 250); };
+    $("#orgKind").onchange = (e) => { ORG.kind = e.target.value; renderOrgs(); };
+    el.querySelectorAll("[data-nb]").forEach((b) => (b.onclick = () => { state.orgs = false; nbLoad(r.iso3).then(() => selectNb(b.dataset.nb, true)); }));
+    $("#orgCSV").onclick = () => saveCSV(`${where} services`, [["Name", "Service", "Reference", "Neighbourhood code", "Neighbourhood"], ...list.map((f2) => [f2.n, FAC_KINDS[f2.k] || f2.k, facRef(f2), f2.nb, nbName(f2.nb)]), [], [facSrc() + ". From Which Places?"]]);
+    if (!NBH.tiles.has(r.iso3)) nbLoad(r.iso3).then(() => { if (state.orgs) renderOrgs(); });
+  }
   // dots on the map: how many charities or schools each neighbourhood has
   const gOrg = gRoot.insert("g", () => gDots.node()).attr("class", "orgdots");
+  let orgTimer = 0;
   function orgDots() {
-    const key = ORG.dots;
-    const la = state.selected;
-    if (!key || !la || state.view !== "map" || !NBH.tiles.has(la)) { gOrg.selectAll("*").remove(); return; }
-    orgLoad(la).then((o) => {
-      if (!o) return;
-      const counts = d3.rollup(key === "sc" ? o.sc : o.ch, (v) => v.length, (x) => x.nb);
-      const fs = NBH.tiles.get(la).fs.filter((f) => counts.get(f.properties.c));
-      const max = d3.max(fs, (f) => counts.get(f.properties.c)) || 1;
-      gOrg.selectAll("circle").data(fs, (f) => f.properties.c).join("circle")
-        .attr("cx", (f) => path.centroid(f)[0]).attr("cy", (f) => path.centroid(f)[1])
-        .attr("data-r0", (f) => 2 + 7 * Math.sqrt(counts.get(f.properties.c) / max))
-        .attr("r", (f) => (2 + 7 * Math.sqrt(counts.get(f.properties.c) / max)) / k)
-        .attr("data-nb", (f) => f.properties.c)
-        .attr("class", key === "sc" ? "odot sc" : "odot");
+    // the councils whose neighbourhoods are on the map and in focus (at most 12, so the map stays quick)
+    const foc = focusSet();
+    const las = NBH.drawn.map((t) => t.la).filter((la) => !foc || foc.has(la)).slice(0, 12);
+    if (!ORG.layers.size || state.view !== "map" || !las.length) { gOrg.selectAll("*").remove(); return; }
+    Promise.all(las.map(orgLoad)).then((files) => {
+      const pts = [];
+      LAYERS.forEach(([key, , col], li) => {
+        if (!ORG.layers.has(key)) return;
+        files.forEach((o, i) => {
+          if (!o) return;
+          const tile = NBH.tiles.get(las[i]);
+          if (!tile) return;
+          const items = key === "ch" ? o.ch : key === "sc" || key === "cc" ? o.sc.filter((s2) => (key === "cc" ? s2.k === "cc" : s2.k === "school")) : key === "my" ? [] : o.fac.filter((f2) => f2.k === key);
+          const counts = key === "my" ? (MYDATA?.matched || new Map()) : d3.rollup(items, (v) => v.length, (x) => x.nb);
+          tile.fs.forEach((f) => { const n = counts.get(f.properties.c); if (n) pts.push({ id: key + f.properties.c, f, n, key, col, li }); });
+        });
+      });
+      const max = d3.rollup(pts, (v) => d3.max(v, (p) => p.n), (p) => p.key);
+      const on = [...ORG.layers].length, order = LAYERS.map((l) => l[0]).filter((key) => ORG.layers.has(key));
+      gOrg.selectAll("circle").data(pts, (p) => p.id).join("circle")
+        .attr("class", "odot")
+        .attr("data-r0", (p) => 1.6 + 6 * Math.sqrt(p.n / max.get(p.key)))
+        .attr("r", (p) => (1.6 + 6 * Math.sqrt(p.n / max.get(p.key))) / k)
+        .attr("cx", (p) => path.centroid(p.f)[0] + (on > 1 ? (order.indexOf(p.key) - (on - 1) / 2) * 3.2 / k : 0))
+        .attr("cy", (p) => path.centroid(p.f)[1])
+        .style("fill", (p) => p.col)
+        .append("title").text((p) => `${p.n} ${p.key === "my" ? `from ${MYDATA?.name || "your data"}` : LAYERS.find((l) => l[0] === p.key)[1].toLowerCase()} in ${p.f.properties.n}`);
     });
   }
+
 
   // ---------- Towns and cities (release 1.4) ----------
   // towns.json: England and Wales's built-up areas of 5,000+ people, each made of the neighbourhoods that best fit it
@@ -1144,7 +1219,7 @@
     townsLoad().then((T) => {
       const t = T?.by.get(code);
       if (!t) return;
-      state.town = code; state.selected = null; state.nb = null; state.orgs = false;
+      state.town = code; state.selected = null; state.nb = null; state.orgs = false; state.mydata = false;
       if (state.view !== "map") state.view = "map";
       render();
       Promise.all(t.la.map(nbLoad)).then((tiles) => {
@@ -1169,11 +1244,11 @@
     const rowsT = cen.map((k2) => `<tr><td>${esc(F[k2].label)}</td><td class="num"><b>≈${esc(fmtK(k2, t.v[k2]))}</b></td><td class="num">${esc(fmtK(k2, la[k2]))}</td><td class="num">${esc(cmpVal(gN, k2))}</td><td class="num">${esc(cmpVal(gU, k2))}</td></tr>`).join("");
     el.innerHTML = `<div class="detail townpage">
       <h2>${esc(t.n)}</h2>
-      <p class="sub">Town or city (built-up area) · ${esc(nation)} · ${d3.format(",")(t.v.population)} people (mid-2024) · in ${t.la.map((c) => `<button type="button" class="linkbtn" data-la="${c}">${esc(byIso.get(c)?.name || c)}</button>`).join(", ")}</p>
+      <p class="sub">Town or city (${t.c.startsWith("S") ? "settlement" : "built-up area"}) · ${esc(nation)} · ${d3.format(",")(t.v.population)} people (mid-2024) · in ${t.la.map((c) => `<button type="button" class="linkbtn" data-la="${c}">${esc(byIso.get(c)?.name || c)}</button>`).join(", ")}</p>
       <div class="scards">${cards}</div>
       <p class="snote">≈ figures are worked out from the town's neighbourhoods (weighted by their population). The deprivation figure counts its neighbourhoods among the 10% most deprived in ${esc(nation)}.</p>
       <table class="gtable nbtable"><thead><tr><th>Census</th><th class="num">${esc(t.n)}</th><th class="num">${esc(la.name)}</th><th class="num">${esc(nation)}</th><th class="num">UK</th></tr></thead><tbody>${rowsT}</tbody></table>
-      <p class="snote">Built-up areas are ONS's towns and cities (2022), made here from the neighbourhoods (LSOAs) that best fit each one, so edges are approximate. London is split into its boroughs' built-up areas, as ONS does. Towns in Scotland and Northern Ireland are not included yet.</p>
+      <p class="snote">Built-up areas are ONS's towns and cities (2022), made here from the neighbourhoods (LSOAs) that best fit each one, so edges are approximate. London is split into its boroughs' built-up areas, as ONS does. Scotland's towns are NRS settlements (2022), made from the data zones most of whose output areas are in each one. Towns in Northern Ireland are not included yet.</p>
       <p><button type="button" class="linkbtn" id="townCSV">⬇ Download these figures (CSV)</button></p>
       <div class="nbnav"><button type="button" class="achip go" id="townClose">← Whole UK</button></div>
     </div>`;
@@ -1185,25 +1260,526 @@
   }
 
   // ---------- Go to a nation or region ----------
-  (function goTo() {
+  // ---------- Places: pick one or more places to look at or compare (release 1.5) ----------
+  // A place is written as a short reference: "n:England", "r:North West", "c:Greater Manchester" (city region),
+  // "t:E63000784" (town or city), "a:E08000035" (council). One council or town opens its own page; one nation, region
+  // or city region opens its page; two or more open a side-by-side comparison. The rest of the map keeps its colours, faded.
+  state.places = state.places || [];
+  const PLACE_TYPES = [["n", "Nation"], ["r", "Region of England"], ["t", "Town or city"], ["c", "City region"], ["a", "Council"], ["u", "My own areas"]];
+  // cities people look for in Scotland and Northern Ireland (built-up areas are England and Wales only): their council
+  const CITY_COUNCILS = { Glasgow: "S12000049", Edinburgh: "S12000036", Aberdeen: "S12000033", Dundee: "S12000042", Stirling: "S12000030", Perth: "S12000048", Inverness: "S12000017", Belfast: "N09000003", "Derry~Londonderry": "N09000005" };
+  function placeOptions(type) {
+    const nations = window.NATIONS || [];
+    if (type === "n") return nations.map((n) => ({ ref: "n:" + n, name: n }));
+    if (type === "r") return (window.REGIONS || []).filter((r) => !nations.includes(r)).map((n) => ({ ref: "r:" + n, name: n }));
+    if (type === "c") return (F.city?.order || []).map((n) => ({ ref: "c:" + n, name: n }));
+    if (type === "u") return MYAREAS.map((a) => ({ ref: "u:" + a.id, name: a.name }));
+    if (type === "a") return rows.filter((r) => r.sovereign).sort((a, b) => a.name.localeCompare(b.name)).map((r) => ({ ref: "a:" + r.iso3, name: r.name }));
+    if (type === "t") {
+      const ts = (TOWNS?.list || []).map((t) => ({ ref: "t:" + t.c, name: t.n, pop: t.v.population }));
+      Object.entries(CITY_COUNCILS).forEach(([n, c]) => { const r = byIso.get(c); if (r) ts.push({ ref: "a:" + c, name: `${n.replace("~", "/")} (${r.name} council)`, pop: r.population }); });
+      return ts.sort((a, b) => b.pop - a.pop);
+    }
+    return [];
+  }
+  function placeData(ref) {
+    const k2 = ref[0], id = ref.slice(2);
+    if (k2 === "a") { const r = byIso.get(id); return r && { ref, name: r.name, kind: "Council", v: r, est: new Set(), members: [id], nation: r.nation }; }
+    if (k2 === "u") { const a = myArea(id); if (!a) return null; const g = aggNbs(a.nbs); return { ref, name: a.name, kind: "Your own area", v: g.v, est: g.est, members: a.las, nation: byIso.get(a.las[0])?.nation, area: a }; }
+    if (k2 === "t") {
+      const t = TOWNS?.by.get(id);
+      return t && { ref, name: t.n, kind: "Town or city", v: { ...t.v, dep_all: t.v.dep10 }, est: TOWNS.est, members: t.la, nation: byIso.get(t.la[0])?.nation, town: t };
+    }
+    const g = GROUPS.get((k2 === "n" ? "n:" : k2 === "r" ? "r:" : "c:") + id) || (k2 === "r" && GROUPS.get("n:" + id));
+    return g && { ref, name: g.name, kind: { nation: "Nation", region: "Region of England", city: "City region", uk: "" }[g.kind], v: g.v, est: new Set(g.est || []), members: g.members, nation: g.nation || g.name, group: g };
+  }
+  const placeName = (ref) => placeData(ref)?.name || ref.slice(2);
+  // set the places, and show them: zoom the map to them all
+  function setPlaces(refs) {
+    refs = [...new Set(refs)].slice(0, 6);
+    state.open = null; state.nb = null; state.orgs = false;
+    if (refs.length === 1 && refs[0][0] === "a") { state.places = []; state.town = null; selectArea(refs[0].slice(2)); return; }
+    if (refs.length === 1 && refs[0][0] === "t") { state.places = []; state.selected = null; openTown(refs[0].slice(2)); return; }
+    state.places = refs; state.selected = null; state.town = null; state.draw = null; state.mydata = false;
+    if (state.view !== "map") state.view = "map";
+    render();
+    zoomToPlaces();
+    const us = refs.filter((r2) => r2[0] === "u");
+    if (us.length) Promise.all(us.map((r2) => prepArea(r2.slice(2)))).then(() => { render(); zoomToPlaces(); });
+  }
+  function addPlace(ref) {
+    const cur = state.places.length ? state.places : state.selected ? ["a:" + state.selected] : state.town ? ["t:" + state.town] : [];
+    setPlaces(cur.includes(ref) ? cur : [...cur, ref]);
+  }
+  function zoomToPlaces() {
+    const mem = new Set(state.places.flatMap((r2) => placeData(r2)?.members || []));
+    const fs = geo.filter((d) => mem.has(d.id) && !insetFor(d.id));
+    if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.85);
+  }
+  // the councils in focus: the rest of the map is shown faded
+  function focusSet() {
+    if (state.places.length) return new Set(state.places.flatMap((r2) => placeData(r2)?.members || []));
+    if (state.town && TOWNS?.by.get(state.town)) return new Set(TOWNS.by.get(state.town).la);
+    if (state.selected && desk()) return new Set([state.selected]);
+    return null;
+  }
+  // the picker: first the kind of place, then the place itself (type to search)
+  (function placePicker() {
     const bar = $(".bar");
-    if (!bar || $("#goTo")) return;
-    const nations = window.NATIONS || [], regions = (window.REGIONS || []).filter((r) => !nations.includes(r));
-    const lab = document.createElement("label");
-    lab.className = "goto"; lab.title = "Zoom the map to a nation or region";
-    lab.innerHTML = `<span>Go to</span><select id="goTo"><option value="">Go to a nation, region or city region…</option><optgroup label="Nations">${nations.map((n) => `<option value="n:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup><optgroup label="Regions of England">${regions.map((n) => `<option value="r:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>${(F.city?.order || []).length ? `<optgroup label="City regions">${F.city.order.map((n) => `<option value="c:${esc(n)}">${esc(n)}</option>`).join("")}</optgroup>` : ""}</select>`;
-    bar.appendChild(lab);
-    const sel = lab.querySelector("select");
-    sel.onchange = () => {
-      const v = sel.value;
-      if (state.view !== "map") { state.view = "map"; render(); }
-      if (!v) { svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity); return; }
-      const [kind, name] = [v[0], v.slice(2)];
-      // show the group's own page (its figures and its councils) and zoom the map to it
-      showGroup(kind === "n" ? "nation" : kind === "c" ? "city" : "region", name);
-      sel.value = "";
+    if (!bar || $("#placePick")) return;
+    const box = document.createElement("div");
+    box.id = "placePick"; box.className = "placepick";
+    box.innerHTML = `<select id="ppType" aria-label="Kind of place"><option value="">Choose a place…</option>${PLACE_TYPES.map(([k2, l]) => `<option value="${k2}">${esc(l)}</option>`).join("")}</select>
+      <input id="ppName" type="text" list="ppList" placeholder="First choose the kind of place" aria-label="Place" disabled autocomplete="off"><datalist id="ppList"></datalist>
+      <button type="button" id="ppGo" class="ppgo" disabled>Show</button><button type="button" id="ppAdd" class="ppadd" disabled title="Add to the places you are comparing">+ Compare</button>
+      <span id="ppChips" class="ppchips"></span>`;
+    bar.appendChild(box);
+    const type = box.querySelector("#ppType"), name = box.querySelector("#ppName"), list = box.querySelector("#ppList");
+    let opts = [];
+    const fill = () => {
+      opts = placeOptions(type.value);
+      list.innerHTML = opts.map((o) => `<option value="${esc(o.name)}"></option>`).join("");
+      name.disabled = !type.value; name.value = "";
+      name.placeholder = type.value ? `Type or pick a ${PLACE_TYPES.find((p) => p[0] === type.value)[1].toLowerCase()}…` : "First choose the kind of place";
+      box.querySelector("#ppGo").disabled = box.querySelector("#ppAdd").disabled = true;
+      if (type.value) setTimeout(() => name.focus(), 0);
     };
+    type.onchange = () => { if (type.value === "t" && !TOWNS) townsLoad().then(fill); fill(); };
+    const pick = () => {
+      const q = name.value.trim().toLowerCase();
+      return opts.find((o) => o.name.toLowerCase() === q) || (q.length >= 3 ? opts.find((o) => o.name.toLowerCase().startsWith(q)) || opts.find((o) => o.name.toLowerCase().includes(q)) : null);
+    };
+    name.oninput = () => { const ok = !!pick(); box.querySelector("#ppGo").disabled = box.querySelector("#ppAdd").disabled = !ok; };
+    name.onkeydown = (e) => { if (e.key === "Enter") { const o = pick(); if (o) { e.preventDefault(); setPlaces([o.ref]); name.value = ""; } } };
+    name.onchange = () => { const o = opts.find((x) => x.name === name.value); if (o) { setPlaces([o.ref]); name.value = ""; } };
+    box.querySelector("#ppGo").onclick = () => { const o = pick(); if (o) { setPlaces([o.ref]); name.value = ""; } };
+    box.querySelector("#ppAdd").onclick = () => { const o = pick(); if (o) { addPlace(o.ref); name.value = ""; } };
   })();
+  // tools for whatever place is being shown: print a report, write a note, make your own area
+  const ptools = document.createElement("div");
+  ptools.id = "placeTools"; ptools.className = "placetools";
+  ptools.innerHTML = `<button type="button" id="ptReport" title="A printable summary of this place, to save as PDF">🖨 Print report</button><button type="button" id="ptNote">📝 Add a note</button><button type="button" id="ptDraw" title="Choose neighbourhoods to make your own area">✏️ Make your own area</button><button type="button" id="ptData" title="Map a spreadsheet of postcodes (it never leaves your computer)">📤 Your data</button><button type="button" id="ptBook">Notebook (<span id="ptN">0</span>)</button>`;
+  setTimeout(() => {
+    const host = $("#phead") || $(".bar");
+    if (host) host.appendChild(ptools);
+    $("#ptReport").onclick = printReport;
+    $("#ptNote").onclick = () => openNotebook();
+    $("#ptBook").onclick = () => openNotebook();
+    $("#ptDraw").onclick = () => startDraw();
+    $("#ptData").onclick = () => { state.mydata = true; render(); };
+  }, 0);
+  function renderPlaceTools() {
+    // the panel is built after this script runs (shell.js), so move the tools into it when it appears
+    const host = $("#phead") || $(".bar");
+    if (host && ptools.parentNode !== host) host.appendChild(ptools);
+    const has = !!(state.selected || state.town || state.places.length);
+    const r = $("#ptReport"), d = $("#ptDraw"), n = $("#ptN");
+    if (r) r.hidden = !has || !!state.draw;
+    if (d) d.hidden = !!state.draw;
+    if (n) n.textContent = NOTES.length;
+    ptools.hidden = !desk() && !has && !NOTES.length;   // on a phone, only when there is something to act on
+  }
+  function renderPlaceChips() {
+    renderPlaceTools();
+    const el = $("#ppChips");
+    if (!el) return;
+    el.innerHTML = state.places.length ? state.places.map((r2) => `<span class="ppchip">${esc(placeName(r2))}<button type="button" data-rm="${esc(r2)}" aria-label="Remove ${esc(placeName(r2))}">×</button></span>`).join("")
+      + `<button type="button" class="linkbtn" id="ppClear">Clear</button>` : "";
+    el.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => { const rest = state.places.filter((x) => x !== b.dataset.rm); if (rest.length) setPlaces(rest); else { state.places = []; goWholeUK(); render(); } }));
+    const c = $("#ppClear"); if (c) c.onclick = () => { state.places = []; goWholeUK(); render(); };
+  }
+  // one nation, region or city region: its page and its councils
+  function renderPlace() {
+    const p = placeData(state.places[0]), el = $("#results");
+    if (!p) { el.innerHTML = `<div class="detail"><p class="snote">Loading…</p></div>`; return; }
+    const ks = HEADLINE().slice(0, 4);
+    const mem = p.members.map((c) => byIso.get(c)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+    el.innerHTML = `<div class="detail placepage">${groupPageHTML(p.group)}
+      <table class="gtable nbtable"><thead><tr><th>Council</th>${ks.map((k2) => `<th class="num">${esc(F[k2].short || F[k2].label)}</th>`).join("")}</tr></thead>
+      <tbody>${mem.map((r) => `<tr><td><button type="button" class="linkbtn" data-iso="${r.iso3}">${esc(r.name)}</button></td>${ks.map((k2) => `<td class="num">${r[k2] != null ? esc(fmtShort(F[k2], r[k2])) : "–"}</td>`).join("")}</tr>`).join("")}</tbody></table>
+      <p class="snote">To compare ${esc(p.name)} with somewhere else, choose another place above and press “+ Compare”.</p></div>`;
+    el.querySelectorAll("button[data-iso]").forEach((b) => (b.onclick = () => selectArea(b.dataset.iso)));
+  }
+  // two or more places side by side
+  function renderCompare() {
+    const ps = state.places.map(placeData).filter(Boolean), el = $("#results"), uk = GROUPS.get("uk");
+    if (ps.length < 2) { el.innerHTML = `<div class="detail"><p class="snote">Loading…</p></div>`; return; }
+    const val = (p, k2) => (p.v[k2] == null ? "–" : (p.est.has(k2) ? "≈" : "") + fmtShort(F[k2], p.v[k2]));
+    const keysAll = FILTERS.filter((f) => f.type === "range" && !f.target && ps.some((p) => p.v[f.key] != null));
+    const head = HEADLINE().filter((k2) => ps.some((p) => p.v[k2] != null));
+    const row = (k2) => {
+      const f = F[k2], nums = ps.map((p) => p.v[k2]).filter((v) => v != null);
+      const hi = nums.length > 1 ? Math.max(...nums) : null, lo = nums.length > 1 ? Math.min(...nums) : null;
+      return `<tr><td>${esc(f.label)}${f.yearText ? ` <span class="yr">${esc(f.yearText)}</span>` : ""}${f.compare === "nation" ? ` <span class="yr" title="Each nation measures this differently">(within nation)</span>` : ""}</td>
+        ${ps.map((p) => `<td class="num${p.v[k2] != null && p.v[k2] === hi ? " hi" : p.v[k2] != null && p.v[k2] === lo ? " lo" : ""}">${esc(val(p, k2))}</td>`).join("")}<td class="num ukc">${uk?.v[k2] != null && f.compare !== "nation" ? esc((uk.est?.includes(k2) ? "≈" : "") + fmtShort(f, uk.v[k2])) : ""}</td></tr>`;
+    };
+    const themes = (window.THEMES || []).map((t) => {
+      const ks = keysAll.filter((f) => t.groups.includes(f.group) && !head.includes(f.key)).map((f) => f.key);
+      return ks.length ? `<tr class="gth"><th colspan="${ps.length + 2}">${esc(t.label)}</th></tr>` + ks.map(row).join("") : "";
+    }).join("");
+    el.innerHTML = `<div class="detail comparepage">
+      <h2>Comparing ${ps.length} places</h2>
+      <p class="sub">${ps.map((p) => `${esc(p.name)} <span class="yr">(${esc(p.kind)})</span>`).join(" · ")}</p>
+      <div class="cmpwrap"><table class="gtable nbtable cmptable"><thead><tr><th>Measure</th>${ps.map((p) => `<th class="num"><button type="button" class="linkbtn" data-open="${esc(p.ref)}">${esc(p.name)}</button></th>`).join("")}<th class="num">UK</th></tr></thead>
+        <tbody><tr class="gth"><th colspan="${ps.length + 2}">Headlines</th></tr>${head.map(row).join("")}${themes}</tbody></table></div>
+      <p class="snote">Figures for each whole place. <b>Bold</b> marks the highest and <span class="lo-key">underline</span> the lowest of the places you chose (higher is not always better). ≈ marks figures worked out from councils or neighbourhoods. Measures marked “within nation” (deprivation, new homes, apprenticeships) are made differently in each nation, so compare them only between places in the same nation. Towns' deprivation is the share of their neighbourhoods in the nation's most deprived 10%.</p>
+      <p><button type="button" class="linkbtn" id="cmpCSV">⬇ Download this comparison (CSV)</button></p>
+    </div>`;
+    el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => setPlaces([b.dataset.open])));
+    $("#cmpCSV").onclick = () => saveCSV(`Comparing ${ps.map((p) => p.name).join(" ")}`, [["Measure", "Period", ...ps.map((p) => p.name), "UK"],
+      ...[...head, ...keysAll.map((f) => f.key).filter((k2) => !head.includes(k2))].map((k2) => [F[k2].label, F[k2].yearText || "", ...ps.map((p) => (p.v[k2] == null ? "" : (p.est.has(k2) ? "~" : "") + p.v[k2])), F[k2].compare === "nation" ? "" : uk?.v[k2] ?? ""]),
+      [], ["~ = estimate worked out from councils or neighbourhoods. Each figure keeps its source's licence (Open Government Licence v3.0). From Which Places?, " + location.href.split("#")[0]]]);
+  }
+
+  // ---------- Release 1.6: charity search, reports, notebook, your own areas ----------
+  const store = {   // the browser's own storage: kept on this computer only; every read and write may fail (private windows)
+    get(k2, d) { try { const v = localStorage.getItem(k2); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set(k2, v) { try { localStorage.setItem(k2, JSON.stringify(v)); return true; } catch (e) { return false; } },
+  };
+  // --- charity search: every charity's name, loaded the first time someone types three letters ---
+  let CHS = null, chsP = null;
+  function chsLoad() {
+    if (CHS) return Promise.resolve(CHS);
+    if (!chsP) chsP = loadJSON("org/search.json").then((d) => {
+      CHS = { la: d.la, c: d.c, low: d.c.map((x) => x[0].toLowerCase()) };
+      const inp = $("#addInput");
+      if (inp && inp.value.trim().length >= 3 && document.activeElement === inp) inp.dispatchEvent(new Event("input"));
+      return CHS;
+    }).catch(() => null);
+    return chsP;
+  }
+  function charityMatches(raw) {
+    if (!CHS) return null;
+    const q = raw.trim().toLowerCase();
+    const num = /^(sc)?\d{5,7}$/i.test(q) ? q.toUpperCase() : null;
+    const out = [];
+    for (let i = 0; i < CHS.c.length && out.length < 6; i++) {
+      if (num ? String(CHS.c[i][3]).toUpperCase() === num : CHS.low[i].includes(q)) out.push(CHS.c[i]);
+    }
+    return out;
+  }
+  function openCharity(c) {
+    const la = CHS.la[c[1]];
+    state.places = []; state.town = null;
+    selectArea(la);
+    Object.assign(ORG, { tab: "ch", q: c[0], theme: "", who: "", size: "" });
+    state.orgs = true;
+    render();
+  }
+
+  // --- your own areas: neighbourhoods you choose, added up ---
+  let MYAREAS = store.get("wp-areas", []);
+  const saveAreas = () => store.set("wp-areas", MYAREAS);
+  function aggNbs(codes) {
+    const ps = codes.map((c) => NBH.rows.get(c)).filter(Boolean);
+    const v = {}, est = new Set();
+    const pop = d3.sum(ps, (p) => p.p || 0);
+    v.population = pop;
+    const w = (k2) => { const xs = ps.filter((p) => p[k2] != null && p.p); const tw = d3.sum(xs, (p) => p.p); return tw ? Math.round((10 * d3.sum(xs, (p) => p.p * p[k2])) / tw) / 10 : null; };
+    v.pct_0_15 = w("a0"); v.pct_65plus = w("a65"); est.add("pct_0_15").add("pct_65plus");
+    const wd = ps.filter((p) => p.d);
+    if (wd.length) { v.dep_all = Math.round((1000 * wd.filter((p) => p.d === 1).length) / wd.length) / 10; v.dep20 = Math.round((1000 * wd.filter((p) => p.d <= 2).length) / wd.length) / 10; }
+    (NBH.meta?.census || []).forEach((k2) => { const x = w(k2); if (x != null) { v[k2] = x; est.add(k2); } });
+    // charities and schools, if the councils' lists are loaded
+    const set = new Set(codes);
+    const las = [...new Set(ps.map((p) => p.la))];
+    if (las.every((la) => ORG.files.has(la))) {
+      const fs = las.map((la) => ORG.files.get(la));
+      v.ch_n = d3.sum(fs, (o) => o.ch.filter((c) => set.has(c.nb)).length);
+      v.sc_n = d3.sum(fs, (o) => o.sc.filter((s2) => s2.k === "school" && set.has(s2.nb)).length);
+      if (pop) v.ch_per1k = Math.round((100000 * v.ch_n) / pop) / 100;
+    }
+    return { v, est, las, n: ps.length };
+  }
+  // drawing mode: clicks on the map add or remove neighbourhoods
+  function startDraw(seed) {
+    state.draw = seed || { id: "a" + Date.now().toString(36), name: "", nbs: new Set() };
+    state.nb = null; state.orgs = false;
+    render();
+  }
+  function toggleDrawNb(code) {
+    const d = state.draw;
+    d.nbs.has(code) ? d.nbs.delete(code) : d.nbs.add(code);
+    const p = NBH.rows.get(code);
+    if (p) orgLoad(p.la);
+    nbDraw(); renderDraw();
+  }
+  function renderDraw() {
+    const d = state.draw, el = $("#results");
+    const a = aggNbs([...d.nbs]);
+    const fmtK = (k2, v) => (v == null ? "–" : k2 === "population" || k2 === "ch_n" || k2 === "sc_n" ? d3.format(",")(v) : k2 === "dep_all" || k2 === "dep20" ? v + "%" : fmtShort(F[k2], v));
+    const show = [["population", "People"], ["pct_0_15", "Aged 0 to 15"], ["pct_65plus", "Aged 65 and over"], ["dep_all", "Neighbourhoods in the most deprived 10%"], ["ch_n", "Charities based here"], ["sc_n", "Schools"], ["c_no_car", null], ["c_bad_health", null], ["c_disabled", null], ["c_carers", null]];
+    el.innerHTML = `<div class="detail drawpage">
+      <h2>${d.name ? esc(d.name) : "Make your own area"}</h2>
+      <p class="sub">Click neighbourhoods on the map to add them; click again to take one out. Zoom in to see them. You can use neighbourhoods from more than one council.</p>
+      <label class="drawname">Name <input type="text" id="drawName" value="${esc(d.name)}" placeholder="For example: our service area" maxlength="60"></label>
+      <p><b>${a.n}</b> neighbourhood${a.n === 1 ? "" : "s"} chosen${a.las.length ? `, in ${a.las.map((c) => esc(byIso.get(c)?.name || c)).join(", ")}` : ""}.</p>
+      ${a.n ? `<table class="gtable nbtable"><tbody>${show.filter(([k2]) => a.v[k2] != null).map(([k2, l]) => `<tr><td>${esc(l || F[k2].label)}</td><td class="num"><b>${a.est.has(k2) ? "≈" : ""}${esc(fmtK(k2, a.v[k2]))}</b></td></tr>`).join("")}</tbody></table>
+        <p class="snote">≈ figures are worked out from the neighbourhoods (weighted by population). Every measure is on the area's page once it is saved.</p>` : ""}
+      <div class="drawbtns"><button type="button" class="achip go" id="drawSave" ${a.n ? "" : "disabled"}>Save this area</button>
+        ${state.selected ? `<button type="button" class="achip" id="drawAll">Add all of ${esc(byIso.get(state.selected)?.name || "")}</button>` : ""}
+        <button type="button" class="achip" id="drawClear" ${a.n ? "" : "disabled"}>Start again</button><button type="button" class="achip" id="drawCancel">Cancel</button></div>
+      <p class="snote">Your areas are kept in this browser on this computer only. Nothing is sent anywhere.</p>
+    </div>`;
+    const nm = $("#drawName"); nm.oninput = () => { d.name = nm.value; };
+    $("#drawCancel").onclick = () => { state.draw = null; render(); };
+    $("#drawClear").onclick = () => { d.nbs.clear(); nbDraw(); renderDraw(); };
+    const all = $("#drawAll"); if (all) all.onclick = () => { const t = NBH.tiles.get(state.selected); if (t) t.fs.forEach((f) => d.nbs.add(f.properties.c)); orgLoad(state.selected); nbDraw(); renderDraw(); };
+    $("#drawSave").onclick = () => {
+      const area = { id: d.id, name: d.name.trim() || `My area ${MYAREAS.length + 1}`, nbs: [...d.nbs], las: aggNbs([...d.nbs]).las, saved: new Date().toISOString().slice(0, 10) };
+      MYAREAS = MYAREAS.filter((x) => x.id !== area.id).concat(area);
+      saveAreas();
+      state.draw = null;
+      setPlaces(["u:" + area.id]);
+    };
+  }
+  const myArea = (id) => MYAREAS.find((x) => x.id === id);
+  // load what a saved area needs (its councils' neighbourhoods and charity lists), then show it
+  function prepArea(id) {
+    const a = myArea(id);
+    return a ? Promise.all([...a.las.map(nbLoad), ...a.las.map(orgLoad)]) : Promise.resolve();
+  }
+  function renderMyArea() {
+    const id = state.places[0].slice(2), a = myArea(id), el = $("#results");
+    if (!a) { state.places = []; return render(); }
+    if (!a.las.every((la) => NBH.tiles.has(la) && ORG.files.has(la))) { el.innerHTML = `<div class="detail"><p class="snote">Loading…</p></div>`; prepArea(id).then(() => render()); return; }
+    const p = placeData("u:" + id), r0 = byIso.get(a.las[0]), gN = GROUPS.get("n:" + r0?.nation), gU = GROUPS.get("uk");
+    const ks = ["population", "pct_0_15", "pct_65plus", "dep_all", "ch_per1k", ...(NBH.meta?.census || [])].filter((k2) => p.v[k2] != null && (F[k2] || k2 === "population"));
+    const fmtK = (k2, v) => (v == null ? "–" : k2 === "population" ? d3.format(",")(v) : k2 === "dep_all" ? v + "%" : fmtShort(F[k2], v));
+    el.innerHTML = `<div class="detail myareapage">
+      <h2>${esc(a.name)}</h2>
+      <p class="sub">Your own area · ${a.nbs.length} neighbourhoods in ${a.las.map((c) => esc(byIso.get(c)?.name || c)).join(", ")} · ${d3.format(",")(p.v.population)} people${p.v.ch_n != null ? ` · ${d3.format(",")(p.v.ch_n)} charities · ${d3.format(",")(p.v.sc_n)} schools` : ""}</p>
+      <table class="gtable nbtable"><thead><tr><th></th><th class="num">${esc(a.name)}</th><th class="num">${esc(r0?.name || "")}</th><th class="num">${esc(r0?.nation || "")}</th><th class="num">UK</th></tr></thead>
+        <tbody>${ks.map((k2) => `<tr><td>${esc(k2 === "population" ? "People" : k2 === "dep_all" ? "Neighbourhoods in the most deprived 10%" : F[k2].label)}</td><td class="num"><b>${p.est.has(k2) ? "≈" : ""}${esc(fmtK(k2, p.v[k2]))}</b></td><td class="num">${esc(fmtK(k2, r0?.[k2]))}</td><td class="num">${esc(gN?.v[k2] != null ? fmtK(k2, gN.v[k2]) : "–")}</td><td class="num">${esc(k2 === "dep_all" ? "" : gU?.v[k2] != null ? fmtK(k2, gU.v[k2]) : "–")}</td></tr>`).join("")}</tbody></table>
+      <p class="snote">≈ figures are worked out from the neighbourhoods, weighted by population. The council column is ${esc(r0?.name || "")}${a.las.length > 1 ? ", the first of its councils" : ""}. Kept in this browser only.</p>
+      <div class="drawbtns"><button type="button" class="achip go" id="maEdit">Change the neighbourhoods</button><button type="button" class="achip" id="maCSV">⬇ Download (CSV)</button><button type="button" class="achip" id="maDel">Delete this area</button></div>
+    </div>`;
+    $("#maEdit").onclick = () => { state.places = []; state.selected = a.las[0]; startDraw({ id: a.id, name: a.name, nbs: new Set(a.nbs) }); };
+    $("#maDel").onclick = () => { if (!confirmDelete(a.name)) return; MYAREAS = MYAREAS.filter((x) => x.id !== a.id); saveAreas(); state.places = []; goWholeUK(); render(); };
+    $("#maCSV").onclick = () => saveCSV(`${a.name} figures`, [["Measure", a.name, r0?.name || "", r0?.nation || "", "UK"], ...ks.map((k2) => [k2 === "population" ? "People" : k2 === "dep_all" ? "Neighbourhoods in the most deprived 10% (%)" : F[k2].label, p.v[k2], r0?.[k2] ?? "", gN?.v[k2] ?? "", gU?.v[k2] ?? ""]), [], ["Neighbourhoods:", ...a.nbs], [], [`Worked out from neighbourhood figures (ONS, NRS, NISRA, Census 2021/2022, deprivation indices; Open Government Licence). From Which Places?, ${location.href.split("?")[0]}`]]);
+  }
+  // a gentle check before deleting (no browser pop-ups: they freeze some pages): click twice within 4 seconds
+  let delArm = 0;
+  function confirmDelete(name) {
+    if (Date.now() - delArm < 4000) { delArm = 0; return true; }
+    delArm = Date.now();
+    const b = $("#maDel") || $("#nbkDelAll"); if (b) b.textContent = "Click again to delete";
+    return false;
+  }
+
+  // --- notebook: notes on places, kept in this browser ---
+  let NOTES = store.get("wp-notebook", []);
+  const saveNotes = () => store.set("wp-notebook", NOTES);
+  const drawer = document.createElement("aside");
+  drawer.id = "notebook"; drawer.className = "card notebook"; drawer.hidden = true; drawer.setAttribute("aria-label", "Notebook");
+  document.body.appendChild(drawer);
+  function currentPlace() {
+    if (state.draw) return null;
+    if (state.nb && NBH.rows.get(state.nb)) return { name: NBH.rows.get(state.nb).n + ", " + (byIso.get(state.selected)?.name || ""), ref: "nb:" + state.nb };
+    if (state.selected) return { name: byIso.get(state.selected)?.name, ref: "a:" + state.selected };
+    if (state.town && TOWNS?.by.get(state.town)) return { name: TOWNS.by.get(state.town).n, ref: "t:" + state.town };
+    if (state.places.length) return { name: state.places.map(placeName).join(" vs "), ref: state.places.join(",") };
+    return null;
+  }
+  function openNotebook(prefill) {
+    drawer.hidden = false;
+    const cp = currentPlace();
+    drawer.innerHTML = `<div class="nbk-head"><h3>📝 Notebook</h3><button type="button" class="iconbtn" id="nbkClose" aria-label="Close">×</button></div>
+      <p class="snote">Notes are kept in this browser on this computer only. Download or print them to keep them safe or share them.</p>
+      <div class="nbk-new"><textarea id="nbkText" rows="3" placeholder="Write a note${cp ? ` about ${esc(cp.name)}` : ""}…"></textarea>
+        <div class="nbk-row">${cp ? `<label><input type="checkbox" id="nbkLink" checked> Link to ${esc(cp.name)}</label>` : "<span></span>"}<button type="button" class="achip go" id="nbkAdd">Add note</button></div></div>
+      <div class="nbk-list">${NOTES.length ? NOTES.slice().reverse().map((n) => `<div class="nbk-note"><div class="nbk-meta">${esc(n.date)}${n.place ? ` · <button type="button" class="linkbtn" data-url="${esc(n.url)}">${esc(n.place)}</button>` : ""}<button type="button" class="nbk-del" data-id="${n.id}" aria-label="Delete note">×</button></div><div class="nbk-text">${esc(n.text).replace(/\n/g, "<br>")}</div></div>`).join("") : `<p class="snote">No notes yet.</p>`}</div>
+      ${NOTES.length ? `<div class="nbk-row"><button type="button" class="linkbtn" id="nbkCSV">⬇ Download (CSV)</button><button type="button" class="linkbtn" id="nbkPrint">🖨 Print</button><button type="button" class="linkbtn" id="nbkDelAll">Delete all</button></div>` : ""}`;
+    const ta = $("#nbkText");
+    if (prefill) ta.value = prefill;
+    setTimeout(() => ta.focus(), 0);
+    $("#nbkClose").onclick = () => { drawer.hidden = true; };
+    $("#nbkAdd").onclick = () => {
+      const text = ta.value.trim();
+      if (!text) return;
+      const link = $("#nbkLink")?.checked && cp;
+      NOTES.push({ id: Date.now().toString(36), date: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), text, place: link ? cp.name : "", url: link ? location.href : "" });
+      if (!saveNotes()) alertBox("This browser would not save the note (it may be in private mode). Download your notes to keep them.");
+      openNotebook();
+    };
+    drawer.querySelectorAll(".nbk-del").forEach((b) => (b.onclick = () => { NOTES = NOTES.filter((n) => n.id !== b.dataset.id); saveNotes(); openNotebook(); }));
+    drawer.querySelectorAll("[data-url]").forEach((b) => (b.onclick = () => { const u = new URL(b.dataset.url, location.href); applyQS(u.search); }));
+    const csv = $("#nbkCSV"); if (csv) csv.onclick = () => saveCSV("Which Places notebook", [["Date", "Place", "Note", "Link"], ...NOTES.map((n) => [n.date, n.place, n.text, n.url])]);
+    const pr = $("#nbkPrint"); if (pr) pr.onclick = () => printHTML("Notebook", `<h1>Notebook</h1>${NOTES.map((n) => `<div class="note"><p class="meta">${esc(n.date)}${n.place ? ` · ${esc(n.place)}` : ""}</p><p>${esc(n.text).replace(/\n/g, "<br>")}</p>${n.url ? `<p class="meta">${esc(n.url)}</p>` : ""}</div>`).join("")}`);
+    const da = $("#nbkDelAll"); if (da) da.onclick = () => { if (!confirmDelete("notes")) return; NOTES = []; saveNotes(); openNotebook(); };
+  }
+  function alertBox(msg) { const s = $("#sentence"); if (s) s.textContent = msg; }
+
+  // --- printable report for the place being shown ---
+  function printHTML(title, body) {
+    const w = window.open("", "_blank");
+    if (!w) { alertBox("Your browser blocked the report window. Allow pop-ups for this site and try again."); return; }
+    w.document.write(`<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><title>${esc(title)} – Which Places?</title>
+      <style>body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2b33;max-width:820px;margin:24px auto;padding:0 20px;font-size:13px;line-height:1.45}
+      h1{font-size:26px;margin:0 0 4px}h2{font-size:16px;margin:22px 0 6px;border-bottom:2px solid #1d2b33;padding-bottom:3px}.sub{color:#5a6b74;margin:0 0 14px}
+      table{width:100%;border-collapse:collapse;margin:4px 0 8px}th,td{padding:4px 6px;border-bottom:1px solid #dde3e6;text-align:left;vertical-align:top}th{font-size:11.5px;color:#5a6b74}
+      td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}tr.g th{padding-top:12px;text-transform:uppercase;letter-spacing:.05em;font-size:10.5px}
+      .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}.card{border:1px solid #dde3e6;border-radius:8px;padding:8px}.card b{font-size:20px;display:block}.card span{font-size:11px;color:#5a6b74}
+      .note{border-bottom:1px solid #dde3e6;padding:6px 0}.meta{color:#5a6b74;font-size:11.5px;margin:2px 0}.foot{margin-top:24px;font-size:11px;color:#5a6b74;border-top:1px solid #dde3e6;padding-top:8px}
+      .noprint{margin:0 0 16px}.noprint button{font:inherit;padding:6px 14px;border-radius:999px;border:1px solid #0e6b75;background:#0e6b75;color:#fff;cursor:pointer}
+      @media print{.noprint{display:none}body{margin:0;max-width:none}h2{break-after:avoid}tr{break-inside:avoid}}</style></head>
+      <body><div class="noprint"><button onclick="print()">Print or save as PDF</button></div>${body}
+      <p class="foot">Made with Which Places? (${esc(location.origin + location.pathname)}) on ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}. Figures come from official open data (ONS, NRS, NISRA, government departments and the charity regulators), reused under the Open Government Licence v3.0; see “Sources and methods” on the site for each one. ≈ marks figures worked out on the site from smaller areas.</p></body></html>`);
+    w.document.close();
+  }
+  function reportRows(ps, colNames) {
+    // ps: place data objects (first is the subject); rows for every measure any of them has, by theme
+    const keys = FILTERS.filter((f) => f.type === "range" && !f.target && ps.some((p) => p && p.v[f.key] != null));
+    const cell = (p, k2) => (!p || p.v[k2] == null ? "–" : (p.est?.has?.(k2) || p.est?.includes?.(k2) ? "≈" : "") + fmtShort(F[k2], p.v[k2]));
+    return `<table><thead><tr><th>Measure</th>${colNames.map((n) => `<th class="n">${esc(n)}</th>`).join("")}</tr></thead><tbody>${(window.THEMES || []).map((t) => {
+      const ks = keys.filter((f) => t.groups.includes(f.group));
+      return ks.length ? `<tr class="g"><th colspan="${colNames.length + 1}">${esc(t.label)}</th></tr>` + ks.map((f) => `<tr><td>${esc(f.label)}${f.yearText ? ` <span class="meta">(${esc(f.yearText)})</span>` : ""}</td>${ps.map((p) => `<td class="n">${esc(cell(p, f.key))}</td>`).join("")}</tr>`).join("") : "";
+    }).join("")}</tbody></table>`;
+  }
+  function printReport() {
+    const uk = GROUPS.get("uk"), ukP = uk && { v: uk.v, est: new Set(uk.est || []) };
+    const natP = (n) => { const g = GROUPS.get("n:" + n); return g && { v: g.v, est: new Set(g.est || []) }; };
+    const cardsHTML = (p, ks) => `<div class="cards">${ks.filter((k2) => p.v[k2] != null && F[k2]).map((k2) => `<div class="card"><span>${esc(F[k2].short || F[k2].label)}</span><b>${p.est?.has?.(k2) ? "≈" : ""}${esc(fmtShort(F[k2], p.v[k2]))}</b></div>`).join("")}</div>`;
+    if (state.nb && NBH.rows.get(state.nb)) {
+      const n = NBH.rows.get(state.nb), r = byIso.get(n.la), nat = natP(r.nation);
+      const pN = { v: { population: n.p, pct_0_15: n.a0, pct_65plus: n.a65, median_age: n.ma, ...Object.fromEntries((NBH.meta?.census || []).map((k2) => [k2, n[k2]])) }, est: new Set() };
+      printHTML(n.n, `<h1>${esc(n.n)}</h1><p class="sub">Neighbourhood in ${esc(r.name)}, ${esc(r.nation)} · ${esc(n.c)}${n.p ? ` · ${d3.format(",")(n.p)} people (mid-2024)` : ""}</p>
+        ${n.d ? `<h2>Deprivation</h2><p>Decile <b>${n.d}</b> of 10 in ${esc(r.nation)} (1 = the most deprived 10%)${n.dr ? `; ranked ${d3.format(",")(n.dr)} of ${d3.format(",")(NBH.meta?.ranked?.[n.c[0]] || 0)}` : ""}. Income ${n.di || "–"}, employment ${n.de || "–"}, health ${n.dh || "–"}, education ${n.dd || "–"} (deciles). Source: ${esc(NBH.meta?.index?.[n.c[0]] || "")}.</p>` : ""}
+        <h2>Figures</h2>${reportRows([pN, { v: r, est: new Set() }, nat, ukP], ["This neighbourhood", r.name, r.nation, "UK"])}`);
+      return;
+    }
+    if (state.places.length >= 2) {
+      const ps = state.places.map(placeData).filter(Boolean);
+      printHTML("Comparison", `<h1>Comparing ${ps.map((p) => esc(p.name)).join(", ")}</h1><p class="sub">${ps.map((p) => `${esc(p.name)} (${esc(p.kind)})`).join(" · ")}</p>${reportRows([...ps, ukP], [...ps.map((p) => p.name), "UK"])}`);
+      return;
+    }
+    const ref = state.places[0] || (state.town ? "t:" + state.town : state.selected ? "a:" + state.selected : null);
+    if (!ref) { alertBox("Choose a place first, then print its report."); return; }
+    const p = placeData(ref);
+    if (!p) return;
+    const nat = p.kind !== "Nation" ? natP(p.nation) : null;
+    const extra = [];
+    if (ref[0] === "a") {
+      const t = NBH.tiles.get(ref.slice(2)), o = ORG.files.get(ref.slice(2));
+      if (t) { const ps2 = t.fs.map((f) => f.properties), d1 = ps2.filter((x) => x.d === 1).length; extra.push(`<h2>Neighbourhoods</h2><p>${ps2.length} neighbourhoods; <b>${d1}</b> (${Math.round((100 * d1) / ps2.length)}%) are among the 10% most deprived in ${esc(p.nation)}. Most deprived: ${ps2.filter((x) => x.dr).sort((a, b) => a.dr - b.dr).slice(0, 8).map((x) => esc(x.n)).join(", ")}.</p>`); }
+      if (o) extra.push(`<h2>Charities and schools</h2><p><b>${d3.format(",")(o.ch.length)}</b> registered charities are based here (total income ${money(d3.sum(o.ch, (c) => c.inc || 0))}); ${o.wk.length ? `${d3.format(",")(o.wk.length)} more based elsewhere say they work here; ` : ""}<b>${d3.format(",")(o.sc.filter((s2) => s2.k === "school").length)}</b> schools.</p>
+        <table><thead><tr><th>Largest charities based here</th><th class="n">Income</th></tr></thead><tbody>${o.ch.slice(0, 10).map((c) => `<tr><td>${esc(c.n)} <span class="meta">(${esc(c.id)})</span></td><td class="n">${money(c.inc)}</td></tr>`).join("")}</tbody></table>`);
+    }
+    const head = (ref[0] === "t" ? ["population", "pct_0_15", "pct_65plus", "dep_all", "ch_per1k", "c_no_car", "c_bad_health", "c_degree"] : HEADLINE());
+    printHTML(p.name, `<h1>${esc(p.name)}</h1><p class="sub">${esc(p.kind)}${p.nation && p.kind !== "Nation" ? ` · ${esc(p.nation)}` : ""}${p.v.population ? ` · ${d3.format(",")(p.v.population)} people` : ""}${p.members?.length > 1 ? ` · ${p.members.length} councils` : ""}</p>
+      ${cardsHTML(p, head)}${extra.join("")}<h2>Every measure</h2>${reportRows([p, nat, ukP].filter(Boolean), [p.name, ...(nat ? [p.nation] : []), "UK"])}`);
+  }
+
+  // ---------- Release 1.7: your own data (postcodes from a spreadsheet, matched in the browser) ----------
+  // Nothing is uploaded: the file is read in this browser, each postcode is looked up in the site's own postcode files,
+  // and only counts per neighbourhood are kept, in memory, until the page is closed.
+  let MYDATA = null;   // { name, total, matched: Map(nb -> count), las: Map(la -> count), bad }
+  function parseCSV(text) {
+    const out = []; let row = [], cell = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) { if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ",") { row.push(cell); cell = ""; }
+      else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cell); out.push(row); row = []; cell = ""; }
+      else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); out.push(row); }
+    return out.filter((r) => r.some((c) => c.trim()));
+  }
+  async function matchPostcodes(pcs, onProgress) {
+    const byDist = new Map();
+    pcs.forEach((raw) => {
+      const m = String(raw || "").trim().toUpperCase().match(PC_RE);
+      const key = m ? m[1] : "?";
+      if (!byDist.has(key)) byDist.set(key, []);
+      byDist.get(key).push(m ? m[2] : null);
+    });
+    const matched = new Map(), las = new Map();
+    let bad = byDist.get("?")?.length || 0, done = 0;
+    const dists = [...byDist.keys()].filter((d2) => d2 !== "?");
+    for (let i = 0; i < dists.length; i += 8) {
+      await Promise.all(dists.slice(i, i + 8).map(async (d2) => {
+        const file = await fetch(`pc/${d2}.json?v=${DATA_VERSION}`).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+        byDist.get(d2).forEach((u) => {
+          const ix = file?.u?.[u];
+          if (ix == null) { bad++; return; }
+          const [nb, la] = file.c[ix];
+          matched.set(nb, (matched.get(nb) || 0) + 1);
+          las.set(la, (las.get(la) || 0) + 1);
+        });
+      }));
+      done += Math.min(8, dists.length - i);
+      onProgress?.(done, dists.length);
+    }
+    return { matched, las, bad, total: pcs.length };
+  }
+  function renderMyData() {
+    const el = $("#results");
+    const d = MYDATA;
+    const head = `<button type="button" class="achip go" id="mdBack">← Back</button><h2>Your own data</h2>`;
+    if (!d || !d.matched) {
+      el.innerHTML = `<div class="detail mydatapage">${head}
+        <p>Choose a spreadsheet saved as <b>CSV</b> with a column of postcodes: service users, members, venues, anything. Each postcode is matched to its neighbourhood, and you can see where they are on the map and how they compare with deprivation.</p>
+        <p class="tip2"><b>Your file never leaves your computer.</b> It is read in this browser; only counts per neighbourhood are kept, and they disappear when you close the page. No postcode is shown on the map.</p>
+        <input type="file" id="mdFile" accept=".csv,text/csv">
+        <div id="mdCols"></div><p id="mdMsg" class="snote"></p>
+        <p class="snote">In Excel: File → Save As → “CSV UTF-8”. A column called “Postcode” is found automatically; otherwise pick it from the list.</p></div>`;
+      $("#mdBack").onclick = () => { state.mydata = false; render(); };
+      $("#mdFile").onchange = (e) => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const rd = new FileReader();
+        rd.onload = () => {
+          const rowsC = parseCSV(String(rd.result).replace(/^﻿/, ""));
+          if (rowsC.length < 2) { $("#mdMsg").textContent = "That file looks empty."; return; }
+          const hdr = rowsC[0];
+          let col = hdr.findIndex((h) => /post\s*code|postal/i.test(h));
+          if (col < 0) col = hdr.findIndex((_, i) => rowsC.slice(1, 30).filter((r) => PC_RE.test(String(r[i] || "").trim())).length > 10);
+          $("#mdCols").innerHTML = `<label class="drawname">Postcode column <select id="mdCol">${hdr.map((h, i) => `<option value="${i}" ${i === col ? "selected" : ""}>${esc(h || "Column " + (i + 1))}</option>`).join("")}</select></label>
+            <label class="drawname">Name for this data <input type="text" id="mdName" value="${esc(f.name.replace(/\.csv$/i, ""))}" maxlength="50"></label>
+            <button type="button" class="achip go" id="mdGo">Match ${d3.format(",")(rowsC.length - 1)} rows</button>`;
+          $("#mdGo").onclick = async () => {
+            const ci = +$("#mdCol").value, name = $("#mdName").value.trim() || "Your data";
+            $("#mdGo").disabled = true;
+            const res = await matchPostcodes(rowsC.slice(1).map((r) => r[ci]), (a, b) => { $("#mdMsg").textContent = `Matching postcodes… ${Math.round((100 * a) / b)}%`; });
+            MYDATA = { name, ...res };
+            ORG.layers.add("my");
+            // the councils' neighbourhoods give each match its deprivation decile
+            const top = [...res.las.entries()].sort((x, y) => y[1] - x[1]).slice(0, 60).map((x) => x[0]);
+            await Promise.all(top.map(nbLoad));
+            render();
+            if (top.length) { const fs = geo.filter((g) => top.includes(g.id) && !insetFor(g.id)); if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.85); }
+          };
+        };
+        rd.readAsText(f);
+      };
+      return;
+    }
+    const n = d3.sum([...d.matched.values()]);
+    const lasT = [...d.las.entries()].sort((a, b) => b[1] - a[1]);
+    // deprivation: how many fall in each decile of their nation
+    const dec = d3.range(11).map(() => 0); let known = 0;
+    d.matched.forEach((c, nb) => { const p = NBH.rows.get(nb); if (p?.d) { dec[p.d] += c; known += c; } });
+    const pct = (x) => (known ? Math.round((100 * x) / known) : 0);
+    el.innerHTML = `<div class="detail mydatapage">${head}
+      <p class="sub"><b>${esc(d.name)}</b>: ${d3.format(",")(n)} of ${d3.format(",")(d.total)} rows matched to a neighbourhood${d.bad ? ` (${d3.format(",")(d.bad)} postcodes not found or missing)` : ""}, in ${lasT.length} council${lasT.length === 1 ? "" : "s"}.</p>
+      ${known ? `<div class="nbdep"><div class="nbdep-main"><div class="dk">Deprivation</div><div class="dv num">${pct(dec[1] + dec[2])}%</div>
+        <p>of your matched rows are in neighbourhoods among the <b>most deprived 20%</b> in their nation (if they were spread evenly, it would be about 20%). ${pct(dec[1])}% are in the most deprived 10%.</p></div>
+        <div class="nbhist" role="img" aria-label="Your rows by deprivation decile">${d3.range(1, 11).map((i) => `<span title="Decile ${i}: ${dec[i]}"><i style="height:${Math.round((100 * dec[i]) / (d3.max(dec) || 1))}%;background:${d3.interpolateYlOrBr(0.95 - (i - 1) * 0.095)}"></i><em>${i}</em></span>`).join("")}</div>
+        <p class="snote">Deciles compare neighbourhoods within each nation (1 = the most deprived 10%), using each nation's own index. ${known < n ? `${d3.format(",")(n - known)} matched rows are in councils not loaded yet (only the 60 with most rows are used).` : ""}</p></div>` : ""}
+      <table class="gtable nbtable"><thead><tr><th>Council</th><th class="num">Rows</th><th class="num">Per 1,000 people</th></tr></thead>
+        <tbody>${lasT.slice(0, 40).map(([la, c]) => `<tr><td><button type="button" class="linkbtn" data-la="${la}">${esc(byIso.get(la)?.name || la)}</button></td><td class="num">${d3.format(",")(c)}</td><td class="num">${byIso.get(la)?.population ? (1000 * c / byIso.get(la).population).toFixed(2) : ""}</td></tr>`).join("")}</tbody></table>
+      <p class="snote">Tick “Your data” under “Show on the map” to see how many fall in each neighbourhood. Nothing has left your computer; closing the page clears it.</p>
+      <div class="drawbtns"><button type="button" class="achip" id="mdCSV">⬇ Counts by neighbourhood (CSV)</button><button type="button" class="achip" id="mdNew">Use another file</button><button type="button" class="achip" id="mdClear">Clear</button></div></div>`;
+    $("#mdBack").onclick = () => { state.mydata = false; render(); };
+    el.querySelectorAll("[data-la]").forEach((b) => (b.onclick = () => { state.mydata = false; selectArea(b.dataset.la); }));
+    $("#mdNew").onclick = () => { MYDATA = null; renderMyData(); };
+    $("#mdClear").onclick = () => { MYDATA = null; ORG.layers.delete("my"); orgDots(); state.mydata = false; render(); };
+    $("#mdCSV").onclick = () => saveCSV(`${d.name} by neighbourhood`, [["Neighbourhood code", "Neighbourhood", "Council", "Rows", "Deprivation decile (1 = most deprived)"],
+      ...[...d.matched.entries()].sort((a, b) => b[1] - a[1]).map(([nb, c]) => { const p = NBH.rows.get(nb); return [nb, p?.n || "", byIso.get(p?.la)?.name || "", c, p?.d || ""]; }),
+      [], ["Counts only: no postcodes are included. Made with Which Places?"]]);
+  }
 
   // ---------- Place names and physical features that appear as you zoom in ----------
   state.labels = true;
@@ -1454,8 +2030,9 @@
       return e && e.match ? cs(rec[cs.f.key]) : null;
     };
     const nbSel = new Set(state.selected ? NB.get(state.selected) || [] : []);
+    const foc = focusSet();
     paths
-      .attr("class", (d) => clsFor(d.rec) + (d.rec && d.rec.iso3 === state.selected ? " sel" : nbSel.has(d.id) ? " nbr" : ""))
+      .attr("class", (d) => clsFor(d.rec) + (d.rec && d.rec.iso3 === state.selected ? " sel" : nbSel.has(d.id) ? " nbr" : "") + (foc && d.rec && !foc.has(d.rec.iso3) ? " unfocus" : foc && d.rec ? " focus" : ""))
       .style("fill", (d) => fillFor(d.rec));
     paths.filter(".nbr").raise(); paths.filter(".sel").raise();
     showUkBtn();
@@ -1490,8 +2067,14 @@
     window.WMS?.refresh(); window.WST?.refresh(); window.WX?.refresh(); window.WCL?.draw(); window.WCG?.refresh(); window.WRG?.refresh();
     const chartList = state.view !== "map" && window.WV_H?.V?.list;
     if (!state.selected) { state.nb = null; state.orgs = false; }
-    if (state.selected) state.town = null;
-    if (state.town && TOWNS?.by.get(state.town)) renderTown();
+    if (state.selected) { state.town = null; state.places = []; }
+    renderPlaceChips();
+    if (state.mydata) renderMyData();
+    else if (state.draw) renderDraw();
+    else if (state.places.length >= 2) renderCompare();
+    else if (state.places.length === 1 && state.places[0][0] === "u") renderMyArea();
+    else if (state.places.length === 1) renderPlace();
+    else if (state.town && TOWNS?.by.get(state.town)) renderTown();
     else if (state.orgs && state.selected) renderOrgs();
     else if (state.nb && NBH.rows.has(state.nb)) renderNb(); else if (state.selected) renderDetail(); else if (chartList) renderChartList(); else renderResults(matches, act, res);
     nbUpdate();
@@ -1983,7 +2566,7 @@
   function renderStarter(act) {
     const el = $("#starter");
     if (window.WQ) return window.WQ.renderCard(el);
-    el.hidden = !!state.filters.length || state.starterHidden || !!state.flow || (desk() && (!!state.selected || !!state.town));
+    el.hidden = !!state.filters.length || state.starterHidden || !!state.flow || state.places.length > 0 || !!state.mydata || !!state.draw || (desk() && (!!state.selected || !!state.town));
     if (el.hidden) return;
     const pz = todaysPuzzle();
     el.innerHTML = `
@@ -2293,7 +2876,7 @@
     if (fs.length) zoomTo(path.bounds({ type: "FeatureCollection", features: fs }), 0.9);
   }
   function selectArea(iso, zoomIt = true) {
-    state.selected = iso; state.open = null; state.nb = null; state.orgs = false; state.town = null;
+    state.selected = iso; state.open = null; state.nb = null; state.orgs = false; state.town = null; state.mydata = false;
     if (state.view !== "map" && !desk()) state.view = "map";
     render();
     if (zoomIt) zoomToCountry(iso);
@@ -2639,6 +3222,9 @@
   function groupSummaryHTML(act) {
     if (act.length !== 1 || !["nation", "region", "city"].includes(act[0].key) || (act[0].values || []).length !== 1 || !GROUPS.size) return "";
     const g = GROUPS.get(groupId(act[0].key, act[0].values[0]));
+    return g ? groupPageHTML(g) : "";
+  }
+  function groupPageHTML(g) {
     if (!g) return "";
     const uk = GROUPS.get("uk"), nat = g.kind !== "nation" && g.nation ? GROUPS.get("n:" + g.nation) : null;
     const est = new Set(g.est || []);
@@ -2669,11 +3255,8 @@
     </section>`;
   }
   function showGroup(k, v) {
-    state.filters = state.filters.filter((x) => x.key !== k);
-    const fl = makeFilter(k); fl.values = [v]; state.filters.push(fl);
-    state.selected = null; state.open = null;
-    render();
-    zoomToGroup(k, v);
+    // a nation, region or city region: open its page (its councils are listed there); the map keeps its colours
+    setPlaces([(k === "nation" ? "n:" : k === "city" ? "c:" : "r:") + v]);
   }
   function bindAreaNav(el) {
     if (state.selected) { nbFillSummary(el, state.selected); orgFillSummary(el, state.selected); }
@@ -2689,11 +3272,11 @@
     const trail = $("#crumbTrail"), sel = $("#crumbSel");
     if (!trail) return;
     const r = state.selected && byIso.get(state.selected);
-    if (sel) sel.hidden = !!r;
+    // the place picker stays visible under the trail, so another place can be added at any time
+    if (sel) { sel.hidden = false; sel.classList.toggle("withtrail", !!r || !!(state.town && TOWNS?.by.get(state.town))); }
     const tw = !r && state.town && TOWNS?.by.get(state.town);
     if (tw) {
       const nat = byIso.get(tw.la[0])?.nation || "";
-      if (sel) sel.hidden = true;
       trail.hidden = false;
       trail.innerHTML = `<nav class="trail" aria-label="Where this town is"><button type="button" data-go="uk">United Kingdom</button><span class="sep" aria-hidden="true">›</span><button type="button" data-go="nation" data-v="${esc(nat)}">${esc(nat)}</button><span class="sep" aria-hidden="true">›</span><b>${esc(tw.n)}</b></nav>`;
       trail.querySelectorAll("button[data-go]").forEach((b) => (b.onclick = () => { state.town = null; if (b.dataset.go === "uk") goWholeUK(); else showGroup("nation", b.dataset.v); render(); }));
@@ -2709,11 +3292,12 @@
     if (nbp) steps.push(`<button type="button" data-go="area">${esc(r.name)}</button>`, `<b>${esc(nbp.n)}</b>`);
     else steps.push(`<b>${esc(r.name)}</b>`);
     trail.innerHTML = `<nav class="trail" aria-label="Where this area is">${steps.join(`<span class="sep" aria-hidden="true">›</span>`)}</nav>
-      <span class="pn"><button type="button" class="tolist" data-go="list" title="Back to the list">☰ List</button>${prev ? `<button type="button" data-iso="${prev.iso3}" title="Previous in the list">‹ ${esc(prev.name)}</button>` : ""}<span class="pos">${i + 1} of ${order.length}</span>${next ? `<button type="button" data-iso="${next.iso3}" title="Next in the list">${esc(next.name)} ›</button>` : ""}</span>`;
+      <span class="pn"><button type="button" class="tolist" data-go="cmp" title="Compare ${esc(r.name)} with another place">+ Compare</button><button type="button" class="tolist" data-go="list" title="Back to the list">☰ List</button>${prev ? `<button type="button" data-iso="${prev.iso3}" title="Previous in the list">‹ ${esc(prev.name)}</button>` : ""}<span class="pos">${i + 1} of ${order.length}</span>${next ? `<button type="button" data-iso="${next.iso3}" title="Next in the list">${esc(next.name)} ›</button>` : ""}</span>`;
     trail.querySelectorAll("button[data-iso]").forEach((b) => (b.onclick = () => selectArea(b.dataset.iso)));
     trail.querySelectorAll("button[data-go]").forEach((b) => (b.onclick = () => {
       const g = b.dataset.go;
       if (g === "area") { state.nb = null; render(); return; }
+      if (g === "cmp") { const cur = "a:" + state.selected; state.selected = null; state.places = [cur]; state.nb = null; render(); const t2 = $("#ppType"); if (t2) { t2.value = "a"; t2.dispatchEvent(new Event("change")); } return; }
       state.selected = null; render();
       if (g === "uk") svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
       else if (g !== "list") zoomToGroup(g, b.dataset.v);
@@ -3030,10 +3614,12 @@
     const fref = (t.getAttribute && t.getAttribute("data-feat")) || (state.mode === "physical" && window.WP?.hit(evt));
     if (fref) { const [ft, fi] = fref.split(":"); state.feat = { t: ft, i: +fi }; state.selected = null; state.tab = "feat:" + ft; return render(); }
     const nbc = t.getAttribute && t.getAttribute("data-nb");
+    if (nbc && state.draw) return toggleDrawNb(nbc);
     if (nbc) return selectNb(nbc);
     const cid = t.getAttribute && t.getAttribute("data-city");
     const iso = cid ? cities[+cid].iso3 : t.getAttribute && t.getAttribute("data-iso");
     if (iso && byIso.get(iso) && window.WQ?.mapClick?.(iso)) return;
+    if (iso && byIso.get(iso) && state.draw) { state.selected = iso; nbUpdate(); zoomToCountry(iso); return; }
     if (iso && byIso.get(iso)) { state.selected = iso; state.open = null; render(); }
   });
 
@@ -3142,9 +3728,18 @@
         return `<button type="button" role="option" class="item" data-i="${items.length - 1}"><span>${esc(t.n)}</span><span class="gtag">town or city · ${d3.format(",")(Math.round(t.v.population / 1000))}k people</span></button>`;
       }).join("");
     }
+    // charities, by name or number (the list of names is fetched the first time it is needed)
+    if (raw.length >= 3 && !PC_RE.test(raw)) {
+      const cm = charityMatches(raw);
+      if (cm === null) { chsLoad(); html += `<h4 class="rh">Charities</h4><p class="info" style="padding:4px 10px;margin:0">Searching charities…</p>`; }
+      else if (cm.length) html += `<h4 class="rh">Charities</h4>` + cm.map((c) => {
+        items.push({ charity: c });
+        return `<button type="button" role="option" class="item" data-i="${items.length - 1}"><span>${esc(c[0])}</span><span class="gtag">charity · ${esc(byIso.get(CHS.la[c[1]])?.name || "")}</span></button>`;
+      }).join("");
+    }
     if (fs.length) html += `<h4 class="rh">Filters</h4>` + fs.slice(0, 12).map(({ f }) => row(f, f.label)).join("");
     if (vals.length) html += `<h4 class="rh">Values</h4>` + vals.slice(0, 6).map((v) => row(v.f, v.o, true)).join("");
-    if (!fs.length && !vals.length && !items.length) html = `<p class="info" style="padding:8px 10px;margin:0">Nothing found for “${esc(q)}”. Try a place name, or a broader word like “age” or “population”, or browse the themes.</p>`;
+    if (!fs.length && !vals.length && !items.length && !/Searching charities/.test(html)) html = `<p class="info" style="padding:8px 10px;margin:0">Nothing found for “${esc(q)}”. Try a place name, or a broader word like “age” or “population”, or browse the themes.</p>`;
     cursor = 0;
     menu.innerHTML = html;
     menu.hidden = false;
@@ -3378,6 +3973,7 @@
   function choose(it) {
     if (!it) return;
     if (it.ask) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); window.WA.apply(it.ask); return; }
+    if (it.charity) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); openCharity(it.charity); return; }
     if (it.town) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); openTown(it.town); return; }
     if (it.postcode) { input.value = ""; closeMenu(); input.blur(); if (openTheme) closeThemes(); goPostcode(it.postcode); return; }
     // a place: show its profile and zoom to it
@@ -3600,6 +4196,12 @@
     if (state.popSized) p.set("pz", "1");
     if (state.classes) p.set("cl", state.classes + (state.nClasses !== 5 ? state.nClasses : ""));
     if (state.selected) p.set("s", state.selected);
+    if (state.nb) p.set("nb", state.nb);
+    if (state.town) p.set("tw", state.town);
+    const pl = state.places.filter((r2) => r2[0] !== "u");   // your own areas live in your browser, so they can't go in a link
+    if (pl.length) p.set("pl", pl.join(","));
+    if (ORG.layers.size) p.set("ly", [...ORG.layers].join("."));
+    if (NBH.shade !== "d") p.set("sh", NBH.shade);
     window.WV?.encode(p);
     return p.toString();
   }
@@ -3641,6 +4243,11 @@
     }
     state.popSized = p.get("pz") === "1";
     if (byIso.has(p.get("s"))) state.selected = p.get("s");
+    if (p.get("nb") && state.selected) { const nbc = p.get("nb"); nbLoad(state.selected).then(() => { if (NBH.rows.has(nbc)) { state.nb = nbc; render(); } }); }
+    if (p.get("tw")) { const twc = p.get("tw"); townsLoad().then((T) => { if (T?.by.get(twc)) openTown(twc); }); }
+    if (p.get("pl")) { const pl = p.get("pl").split(",").filter((r2) => /^[nrcta]:/.test(r2)); const go = () => setPlaces(pl); if (pl.some((r2) => r2[0] === "t")) townsLoad().then(go); else if (GROUPS.size) go(); else pendingPlaces = pl; }
+    (p.get("ly") || "").split(".").filter((x) => LAYERS.some((l) => l[0] === x)).forEach((x) => ORG.layers.add(x));
+    if (p.get("sh")) NBH.shade = p.get("sh");
     window.WV?.decode(p);
     const y = +p.get("y");
     if (y && TS_YEARS.includes(y)) { state.year = y; applyYear(y); }  // clamped to the filters' years on first render
@@ -3677,7 +4284,7 @@
     zoomBy: (f) => svg.transition().duration(250).call(zoom.scaleBy, f),
     panBy: (dx, dy) => { const t = d3.zoomTransform(svg.node()); svg.transition().duration(200).call(zoom.translateBy, dx / t.k, dy / t.k); },
     resetZoom: () => svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity),
-    zoomToCountry: (iso) => zoomToCountry(iso), insetShift, selectArea, zoomToGroup, openAbout: () => openAbout(), NB,
+    zoomToCountry: (iso) => zoomToCountry(iso), insetShift, selectArea, zoomToGroup, openAbout: () => openAbout(), NB, openMyData: () => { state.mydata = true; render(); }, openNotebook: (t) => openNotebook(t), printReport: () => printReport(), setPlaces: (r2) => setPlaces(r2),
     project: (lon, lat) => projection([lon, lat]), geoPath: () => path, landNode: () => gLand.node(), get k() { return d3.zoomTransform(svg.node()).k; },
     layer: (name) => { let g = gRoot.select(`g.layer-${name}`); if (g.empty()) g = gRoot.append("g").attr("class", `layer-${name}`); return g; },
     zoomToPoint: (lon, lat, k = 4) => { const [x, y] = projection([lon, lat]); const vb = svg.attr("viewBox").split(" ").map(Number); svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(vb[2] / 2 - x * k, vb[3] / 2 - y * k).scale(k)); },
